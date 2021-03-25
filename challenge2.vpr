@@ -3,47 +3,129 @@ field data: Int
 field prev: Ref // Also used as left subtree pointer
 field next: Ref // Also used as right subtree pointer
 
-predicate dll(head: Ref) {
-    
+predicate list(head: Ref) {
+    head != null ==>
+        acc(head.data) && acc(head.prev) && acc(head.next) && list(head.next)
 }
 
-method size(head: Ref) returns (count: Int) {
+
+predicate dll(head: Ref) {
+    head != null ==>
+        acc(head.data) && acc(head.prev) && acc(head.next) &&
+        dll(head.prev) && dll(head.next)
+}
+
+// only needs forward access
+method size(head: Ref) returns (count: Int)
+    requires list(head)
+    ensures list(head)
+    ensures count == size_list(head)
+{
     if (head != null) {
+        unfold list(head)
         count := size(head.next)
         count := count + 1
+        fold list(head)
     } else {
         count := 0
     }
 }
 
-method dll_to_bst(head: Ref) returns (root: Ref) {
+function size_list(head: Ref): Int
+    requires list(head)
+    ensures result >= 0
+{
+    head != null ? (unfolding list(head) in size_list(head.next) + 1) : 0
+}
+
+method lemma_size_non_null_non_empty(head: Ref)
+    requires list(head)
+    requires size_list(head) > 0
+    ensures list(head) && head != null
+{
+}
+
+method dll_to_bst(head: Ref) returns (root: Ref)
+    requires list(head)
+    ensures bst(root)
+{
     var n: Int
     var right: Ref
     n := size(head)
     root, right := dll_to_bst_rec(head, n)
+
+    assert bst(root) && list(right)
+
 }
 
 // Converts a sorted DLL into a balanced BST
 // head: Pointer to doubly linked list
 // n: number of nodes of list to convert to tree
-method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref) {
+
+predicate bst(root: Ref) {
+    root != null ==>
+        acc(root.data) && acc(root.prev) && acc(root.next) &&
+        bst(root.prev) && bst(root.next)
+}
+
+function size_bst(root: Ref): Int
+    requires bst(root)
+{
+    root != null ? (unfolding bst(root) in size_bst(root.next) + size_bst(root.prev) + 1) : 0
+}
+
+method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
+    requires list(head)
+
+    requires size_list(head) >= n
+    requires n >= 0
+
+    ensures list(right)
+    ensures bst(root)
+
+    ensures size_bst(root) == n
+
+    ensures size_list(right) + n == old(size_list(head))
+{
     if (n > 0) {
         // Recursively construct the left subtree
         var left: Ref
         left, root := dll_to_bst_rec(head, n/2)
         // [head, root) is a tree rooted at left, [root, ...] is a list
         // Set pointer to left subtree
+
+        assert size_bst(left) == n/2
+        assert bst(left) && list(root)
+
+        unfold list(root)
+
+        // Needs access to root.prev
         root.prev := left
+
+
         // Recursively construct the right subtree
         // size(right subtree) = n - size(left subtree) - 1 (for root)
         var temp: Ref
         temp, right := dll_to_bst_rec(root.next, n-n/2-1)
+
+        assert size_bst(temp) == n-n/2-1
+        assert bst(temp) && list(right)
+
         // [head, root) is a tree rooted at left, [root.next, right) is tree at temp
         // Set pointer to right subtree
         root.next := temp
         // [head, right) is a tree rooted at root
+
+
+        fold bst(root)
+
+        assert size_bst(root) == n/2 + n - n/2
+        assert size_bst(root) == n
+
+
     } else {
         root := null
         right := head
+        fold bst(root)
     }
 }
