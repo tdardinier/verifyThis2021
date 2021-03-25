@@ -1,0 +1,49 @@
+// Ref is the type of nodes used for both list and tree, and has these fields:
+field data: Int
+field prev: Ref // Also used as left subtree pointer
+field next: Ref // Also used as right subtree pointer
+
+predicate dll(head: Ref) {
+    
+}
+
+method size(head: Ref) returns (count: Int) {
+    if (head != null) {
+        count := size(head.next)
+        count := count + 1
+    } else {
+        count := 0
+    }
+}
+
+method dll_to_bst(head: Ref) returns (root: Ref) {
+    var n: Int
+    var right: Ref
+    n := size(head)
+    root, right := dll_to_bst_rec(head, n)
+}
+
+// Converts a sorted DLL into a balanced BST
+// head: Pointer to doubly linked list
+// n: number of nodes of list to convert to tree
+method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref) {
+    if (n > 0) {
+        // Recursively construct the left subtree
+        var left: Ref
+        left, root := dll_to_bst_rec(head, n/2)
+        // [head, root) is a tree rooted at left, [root, ...] is a list
+        // Set pointer to left subtree
+        root.prev := left
+        // Recursively construct the right subtree
+        // size(right subtree) = n - size(left subtree) - 1 (for root)
+        var temp: Ref
+        temp, right := dll_to_bst_rec(root.next, n-n/2-1)
+        // [head, root) is a tree rooted at left, [root.next, right) is tree at temp
+        // Set pointer to right subtree
+        root.next := temp
+        // [head, right) is a tree rooted at root
+    } else {
+        root := null
+        right := head
+    }
+}

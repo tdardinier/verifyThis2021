@@ -1,0 +1,91 @@
+domain IArray {
+  function slot(a: IArray, i: Int): Ref
+  function len(a: IArray): Int
+  function first(r: Ref): IArray
+  function second(r: Ref): Int
+
+  axiom all_diff {
+    forall a: IArray, i: Int :: { slot(a,i) }
+      first(slot(a,i)) == a && second(slot(a,i)) == i
+  }
+
+  axiom len_nonneg {
+    forall a: IArray :: { len(a) }
+      len(a) >= 0
+  }
+}
+
+function ind(a: Seq[Int], i: Int): Bool
+{
+    i >= 0 && i < |a|
+}
+
+function unique_seq(a: Seq[Int]): Bool
+{
+    forall i:Int, j:Int :: { ind(a, i), ind(a, j) } ind(a, i) && ind(a, j) && i != j ==> a[i] != a[j]
+}
+
+function is_permut(a: Seq[Int], b: Set[Int]): Bool
+{
+    |a| == |b| && unique_seq(a) && (forall i:Int :: { ind(a, i) } ind(a, i) ==> a[i] in b)
+}
+
+function smaller(a: Seq[Int], b: Seq[Int]): Bool
+    // ensures a != b // fails
+{
+    |a| == |b| &&
+    exists k: Int :: { ind(a, k) }
+        (forall i:Int :: { ind(a, i) }
+            ind(a, i) ==>
+            (i < k ==> a[i] == b[i]) && (i == k ==> a[i] < b[i]))
+}
+
+function smaller_rec(a: Seq[Int], b: Seq[Int]): Bool
+    ensures result ==> a != b
+{
+    |a| == |b| && |a| > 0 &&
+    (a[0] < b[0] || (a[0] == b[0] && smaller_rec(a, b)))
+}
+
+method smaller_diff(a: Seq[Int], b: Seq[Int])
+    requires smaller(a, b)
+    ensures a != b
+{
+
+
+    assert smaller(a, b)
+
+    assert a == b || smaller(a, b)
+
+    assert     |a| == |b| &&
+    exists k: Int :: { ind(a, k) }
+        (forall i:Int :: { ind(a, i) }
+            ind(a, i) ==>
+            (i < k ==> a[i] == b[i]) && (i == k ==> a[i] < b[i]))
+
+
+    assert |a| == |b|
+    assert forall i:Int :: { ind(a, i) } i >= 0 && i < |a| ==> ind(a, i)
+
+}
+
+method test()
+{
+    var a: Seq[Int] := Seq(1, 2, 3)
+    var b: Seq[Int] := Seq(1, 3, 2)
+
+    var s: Set[Int] := Set(1, 2, 3)
+
+    assert ind(a, 0)
+    assert ind(a, 1)
+    assert ind(a, 2)
+
+    assert is_permut(a, s)
+
+    assert smaller(a, b)
+
+
+
+
+
+}
