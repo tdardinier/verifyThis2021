@@ -22,10 +22,9 @@ function firstDiff(s1:Seq[Int], s2:Seq[Int]) : Int
   ensures 0 <= result && result <= |s1|
   ensures forall i:Int :: {s1[i]}{s2[i]} 0 <= i && i < result ==> s1[i] == s2[i]
   ensures result < |s1| ==> s1[result] != s2[result]
-  ensures result == |s1| ==> s1 == s2 // TODO alarming: Silicon accepts this with == swapped for != ...
-  //decreases |s1| // not available in IDE version :(
-{
-    (|s1| == 0 || s1[0] != s2[0]) ? 0 : firstDiff(s1[1..],s2[1..]) + 1 // TODO amazing - this just works :)
+  ensures result == |s1| ==> s1 == s2 
+{}
+    (|s1| == 0 || s1[0] != s2[0]) ? 0 : firstDiff(s1[1..],s2[1..]) + 1
 }
 
 function lexicoLess(s1:Seq[Int], s2:Seq[Int]) : Bool
@@ -54,10 +53,7 @@ define A(i) slot(a,i).val
 function toSeq(a:IArray) : Seq[Int]
   requires ARRAYPERMS(a)
   ensures |result| == len(a) && forall i:Int :: {A(i)}{result[i]} 0 <= i && i < len(a) ==> A(i) == result[i]
-// TODO (maybe): could implement simply (but obvious)
-
-function isPerm(s1:Seq[Int], s2:Seq[Int]) : Bool
-  requires |s1| == |s2|
+// could implement simply (but obvious)
 
 method swap(a:IArray, j:Int, k:Int)
   requires 0 <= j && 0 <= k && j < len(a) && k < len(a)
@@ -69,7 +65,6 @@ method swap(a:IArray, j:Int, k:Int)
       A(j) := A(k)
       A(k) := tmp
   }
-
 
 domain permutationations {
     function permutation(s1:Seq[Int], s2:Seq[Int]) : Bool
@@ -115,6 +110,9 @@ method sort(a: IArray) // this code wasn't given, so assume it with a reasonable
 
 method permut(aptr: Ref) returns (res : Seq[Seq[Int]]) // result is a reserved name in Viper
   requires aptr != null ==> acc(aptr.deref) && ARRAYPERMS(aptr.deref)
+  ensures aptr == null <==> |res| == 0 
+  ensures forall i:Int :: 0 <= i && i < |res| ==> |res[i]| == len(old(aptr.deref))
+  ensures forall i:Int, j:Int :: {res[i],res[j]} 0 <= i && i<j && j < |res| ==> lexicoLess(res[i],res[j]) // lexicographically ordered
 {
   res := Seq()
   
@@ -130,10 +128,13 @@ method permut(aptr: Ref) returns (res : Seq[Seq[Int]]) // result is a reserved n
     var more : Bool
     more := next(a)
     while(more)
-      invariant ARRAYPERMS(a)
-      
+      invariant ARRAYPERMS(a) && |res| > 0
+      invariant forall i:Int :: 0 <= i && i < |res| ==> |res[i]| == len(a)
+      invariant forall i:Int, j:Int :: {res[i],res[j]} 0 <= i && i<j && j < |res| ==> lexicoLess(res[i],res[j])
+      invariant more ==> lexicoLess(res[|res|-1],toSeq(a)) // current a is lexicographically ahead of last element on sequence
     {
         res := res ++ Seq(toSeq(a))
+        more := next(a)
     }
     // no "return result": res is an out parameter, so its last-assigned value is implicitly returned
   }
@@ -185,14 +186,12 @@ method next(a:IArray) returns (b:Bool)
  
       label preloop // to refer back to in loop invariant:
       while(i<j)
-        invariant ARRAYPERMS(a)
-        invariant oldi <= i && i <= j+1 && j <= oldj
-        invariant oldi + oldj == i + j
+        invariant ARRAYPERMS(a) && permutation(old(toSeq(a)),toSeq(a))
+        invariant oldi <= i && i <= j+1 && j <= oldj && oldi + oldj == i + j
         // swapped parts: [oldi..i) and (j..oldj]
         invariant forall k:Int :: {A(k)} 0 <= k && k < len(a) && (oldi <= k && k < i || j < k && k <= oldj) ==> A(k) == old[preloop](A(oldi + oldj - k))
         // unchanged regions:
         invariant forall k:Int :: {A(k)} 0 <= k && k < len(a) && (k < oldi || k > oldj || i <= k && k <= j) ==> A(k) == old[preloop](A(k))
-        invariant permutation(old(toSeq(a)),toSeq(a))
         decreases (j-i) // termination
         {
             swap(a,i,j)
@@ -201,83 +200,4 @@ method next(a:IArray) returns (b:Bool)
         }
       b := true // "return true"
   }
-
 }
-
-
-
-/*
-function ind(a: Seq[Int], i: Int): Bool
-{
-    i >= 0 && i < |a|
-}
-
-function unique_seq(a: Seq[Int]): Bool
-{
-    forall i:Int, j:Int :: { ind(a, i), ind(a, j) } ind(a, i) && ind(a, j) && i != j ==> a[i] != a[j]
-}
-
-function is_permutation(a: Seq[Int], b: Set[Int]): Bool
-{
-    |a| == |b| && unique_seq(a) && (forall i:Int :: { ind(a, i) } ind(a, i) ==> a[i] in b)
-}
-
-function smaller(a: Seq[Int], b: Seq[Int]): Bool
-    // ensures a != b // fails
-{
-    |a| == |b| &&
-    exists k: Int :: { ind(a, k) }
-        (forall i:Int :: { ind(a, i) }
-            ind(a, i) ==>
-            (i < k ==> a[i] == b[i]) && (i == k ==> a[i] < b[i]))
-}
-
-function smaller_rec(a: Seq[Int], b: Seq[Int]): Bool
-    ensures result ==> a != b
-{
-    |a| == |b| && |a| > 0 &&
-    (a[0] < b[0] || (a[0] == b[0] && smaller_rec(a, b)))
-}
-
-method smaller_diff(a: Seq[Int], b: Seq[Int])
-    requires smaller(a, b)
-    ensures a != b
-{
-
-
-    assert smaller(a, b)
-
-    assert a == b || smaller(a, b)
-
-    assert     |a| == |b| &&
-    exists k: Int :: { ind(a, k) }
-        (forall i:Int :: { ind(a, i) }
-            ind(a, i) ==>
-            (i < k ==> a[i] == b[i]) && (i == k ==> a[i] < b[i]))
-
-
-    assert |a| == |b|
-    assert forall i:Int :: { ind(a, i) } i >= 0 && i < |a| ==> ind(a, i)
-
-}
-
-method test()
-{
-    var a: Seq[Int] := Seq(1, 2, 3)
-    var b: Seq[Int] := Seq(1, 3, 2)
-
-    var s: Set[Int] := Set(1, 2, 3)
-
-    assert ind(a, 0)
-    assert ind(a, 1)
-    assert ind(a, 2)
-
-    assert is_permutation(a, s)
-
-    assert smaller(a, b)
-
-
-
-
-
-}*/
