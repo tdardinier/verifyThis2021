@@ -4,23 +4,16 @@ field prev: Ref // Also used as left subtree pointer
 field next: Ref // Also used as right subtree pointer
 
 // ALEX: having a go at refactoring to pull out the null case (might need fewer lemmas?)
-predicate list(head: Ref) {
-    head != null ==>
-        acc(head.data) && acc(head.prev) && acc(head.next) && list(head.next)
+predicate list(head: Ref) { // no need to require anything about prev's values as they get overwritten anyway
+        acc(head.data) && acc(head.prev) && acc(head.next) && (head.next != null ==> list(head.next))
 }
 
-
-predicate dll(head: Ref) {
-    head != null ==>
-        acc(head.data) && acc(head.prev) && acc(head.next) &&
-     dll(head.next)
-}
 
 // only needs forward access
 method size(head: Ref) returns (count: Int)
-    requires acc(list(head), 1/2)
-    ensures acc(list(head), 1/2)
-    ensures count == size_list(head)
+    requires head != null ==> acc(list(head), 1/2)
+    ensures head != null ==> acc(list(head), 1/2) && count == size_list(head)
+    ensures head == null ==> count == 0
 {
     if (head != null) {
         unfold acc(list(head), 1/2)
@@ -36,44 +29,65 @@ function size_list(head: Ref): Int
     requires acc(list(head), 1/2)
     ensures result >= 0
 {
-    head != null ? (unfolding acc(list(head), 1/2) in size_list(head.next) + 1) : 0
+    (unfolding acc(list(head), 1/2) in (head.next == null ? 1 : size_list(head.next) + 1))
 }
 
-method lemma_size_non_null_non_empty(head: Ref)
+/*method lemma_size_non_null_non_empty(head: Ref)
     requires list(head)
     requires size_list(head) > 0
     ensures list(head) && head != null
 {
-}
+}*/
 
 // Converts a sorted DLL into a balanced BST
 // head: Pointer to doubly linked list
 // n: number of nodes of list to convert to tree
 
 predicate bst(root: Ref) {
-    root != null ==>
         acc(root.data) && acc(root.prev) && acc(root.next) &&
-        bst(root.prev) && bst(root.next)
+        (root.prev != null ==> bst(root.prev)) && 
+        (root.next != null ==> bst(root.next))
 }
 
 function size_bst(root: Ref): Int
-    requires bst(root)
+    requires acc(bst(root),1/2)
 {
-    root != null ? (unfolding bst(root) in size_bst(root.next) + size_bst(root.prev) + 1) : 0
+    unfolding acc(bst(root),1/2) in ((root.next == null ? 0 : size_bst(root.next)) + (root.prev == null ? 0 : size_bst(root.prev)) + 1)
+}
+
+function list_index(head:Ref, i:Int): Int 
+  requires list(head) && 0 <= i && i < size_list(head)
+{
+  unfolding list(head) in (i == 0 ? head.data : list_index(head.next,i-1))
 }
 
 function list_larger(head: Ref, m: Int): Bool
-    requires list(head)
+    requires head != null ==> list(head)
 {
     head != null ==> unfolding list(head) in head.data >= m && list_larger(head.next, m)
 }
 
-function sorted_list(head: Ref): Bool
+// 
+define sorted_list(head) forall ii:Int, jj:Int :: 0 <= ii && ii < jj && jj < size_list(head) ==> list_index(head,ii) <= list_index(head,jj)
+/*function sorted_list(head: Ref): Bool
     requires list(head)
 {
     head != null ==> list_larger(head, unfolding list(head) in head.data) && unfolding list(head) in sorted_list(head.next)
-}
+}*/
 
+function bst_index(root:Ref, i:Int) : Int
+  requires acc(bst(root), 1/2) && 0 <= i && i < size_bst(root)
+  {
+      unfolding acc(bst(root), 1/2) in 
+        let left_size == (root.prev == null ? 0 : size_bst(root.prev)) in 
+        (i < left_size ? bst_index(root.prev,i)
+         : (i == left_size ? root.data : bst_index(root.next, i - left_size - 1))) 
+  }
+
+// macro: hopefully this means implications are "for free" when shifting bounds?
+define bst_values_between(root, lowest, highest) forall kk:Int :: 0 <= kk && kk < size_bst(root) ==> lowest <= bst_index(root, kk) && bst_index(root, kk) <= highest
+
+/*
 function bst_smaller_than(root: Ref, M: Int): Bool
     requires acc(bst(root), 1/2)
 {
@@ -87,16 +101,21 @@ function bst_larger_than(root: Ref, m: Int): Bool
     root != null ==>
         unfolding acc(bst(root), 1/2) in root.data >= m && bst_larger_than(root.prev, m) && bst_larger_than(root.next, m)
 }
+*/
 
-function is_bst(root: Ref): Bool
+define is_bst(root) is_bst_between(root,bst_index(root,0),bst_index(root,size_bst(root) - 1))
+
+function is_bst_between(root: Ref, lowest:Int, highest:Int): Bool
     requires acc(bst(root), 1/2)
+    ensures result ==> bst_values_between(root, lowest, highest)
 {
-    root != null ==>
-        unfolding acc(bst(root), 1/2) in
-            bst_smaller_than(root.prev, root.data) && bst_larger_than(root.next, root.data) &&
-            is_bst(root.prev) && is_bst(root.next)
+    unfolding acc(bst(root), 1/2) in
+      (root.prev != null ==> is_bst_between(root.prev,lowest,root.data)) &&
+      lowest <= root.data && root.data <= highest &&
+      (root.next != null ==> is_bst_between(root.next,root.data,highest))
 }
 
+/*
 method lemma_bst_larger_than_change_bound(root: Ref, a: Int, b: Int)
     requires acc(bst(root), 1/2)
     requires bst_larger_than(root, a)
@@ -133,6 +152,7 @@ method lemma_bst_smaller_than_change_bound(root: Ref, a: Int, b: Int)
     }
 
 }
+*/
 
 method dll_to_bst(head: Ref) returns (root: Ref)
     requires list(head)
@@ -156,12 +176,12 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
     ensures bst(root)
     ensures size_bst(root) == n
     ensures size_list(right) + n == old(size_list(head))
-    ensures old(sorted_list(head)) ==> sorted_list(right) && is_bst(root)
+    ensures head != null && old(sorted_list(head)) ==> sorted_list(right) && is_bst(root)
 
     // The bst is smaller than the element on the right, that is right.data
-    ensures old(sorted_list(head)) && right != null ==> unfolding list(right) in bst_smaller_than(root, right.data)
+    ensures old(sorted_list(head)) && right != null ==> unfolding list(right) in is_bst_between(root, (old(unfolding list(head) in head.data)), right.data)
     // The bst is larger than the element on the left, that is head.data
-    ensures old(sorted_list(head)) && head != null ==> bst_larger_than(root, old(unfolding list(head) in head.data))
+//    ensures old(sorted_list(head)) && head != null ==> bst_larger_than(root, old(unfolding list(head) in head.data))
 
     ensures old(sorted_list(head)) && root != null && right != null ==> (unfolding bst(root) in root.data) <= (unfolding list(right) in right.data)
     ensures old(sorted_list(head)) && root != null && head != null ==> (old(unfolding list(head) in head.data)) <= (unfolding bst(root) in root.data)
@@ -223,19 +243,19 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
 
         //assert b && root.next != null ==> bst_larger_than(temp, v_root_next)
 
-        if (b && root.next != null) {
-            lemma_bst_larger_than_change_bound(root.next, v_root_next, v_root)
-        }
+//        if (b && root.next != null) {
+//            lemma_bst_larger_than_change_bound(root.next, v_root_next, v_root)
+//        }
 
-        if (b && right != null) {
-            lemma_bst_smaller_than_change_bound(root.prev, v_root, v_right)
-        }
+//        if (b && right != null) {
+//            lemma_bst_smaller_than_change_bound(root.prev, v_root, v_right)
+//        }
 
-        if (b && head != null) {
+//        if (b && head != null) {
             // root.prev = left
             // root.next = temp
-            lemma_bst_larger_than_change_bound(root.next, v_root_next, v_head)
-        }
+//            lemma_bst_larger_than_change_bound(root.next, v_root_next, v_head)
+//        }
         fold bst(root)
 
     } else {
