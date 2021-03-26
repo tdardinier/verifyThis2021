@@ -1,0 +1,29 @@
+// nxn matrix on heap
+
+domain NMatrix {
+  function slot(a: NMatrix, i: Int, j:Int): Ref
+  function dim(a: NMatrix): Int
+  function parent(r: Ref): NMatrix
+  function Icoord(r: Ref): Int
+  function Jcoord(r: Ref): Int
+
+  axiom all_diff { // slot(m,i,j) is injective in all parameters
+    forall m: NMatrix, i: Int, j:Int :: { slot(m,i,j) }
+      parent(slot(m,i,j)) == m && Icoord(slot(m,i,j)) == i && Jcoord(slot(m,i,j)) == j 
+  }
+
+  axiom dim_nonneg {
+    forall a: NMatrix :: { dim(a) }
+      dim(a) >= 0
+  }
+
+}
+
+field val: Int // heap location per slot per matrix
+
+define M(i,j) slot(m,i,j).val // maybe use this in code?
+
+method allocMatrix(d:Int) returns (m: NMatrix)
+  requires d >= 0
+  ensures dim(m) == d
+  ensures forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < dim(m) && j < dim(m) ==> acc(slot(m,i,j).val)
