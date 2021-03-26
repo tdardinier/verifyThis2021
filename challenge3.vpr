@@ -17,50 +17,32 @@ domain NMatrix {
       dim(a) >= 0
   }
 
-}
+  function tl_submatrix(a: NMatrix): NMatrix
 
-function from_pair_to_int(i: Int, j: Int): Int
-function from_int_to_pair_fst(i: Int): Int
-function from_int_to_pair_snd(i: Int): Int
-
-
-/*
-// ((fst_i, fst_j), (snd_i, snd_j))
-domain transposition {
-  function fst_i(t: transposition): Int
-  function fst_j(t: transposition): Int
-  function snd_i(t: transposition): Int
-  function snd_j(t: transposition): Int
-}
-
-function wf_transposition(t: transposition, n: Int): Bool
-{
-  fst_i(t) >= 0 && fst_i(t) < n &&
-  fst_j(t) >= 0 && fst_j(t) < n &&
-  snd_i(t) >= 0 && snd_i(t) < n &&
-  snd_j(t) >= 0 && snd_j(t) < n
-}
-
-function is_transpo(a: NMatrix, b: NMatrix, t: transposition): Bool
-{
+  axiom tl_submatrix_def {
+    forall a:NMatrix :: { tl_submatrix(a) } dim(a) >= 1 ==>
+      dim(tl_submatrix(a)) == dim(a) - 1 &&
+        forall i:Int, j:Int :: { slot(a, i, j) } {slot(tl_submatrix(a), i, j)} i >= 0 && i < dim(a) - 1 && j >= 0 && j < dim(a) - 1
+        ==> slot(tl_submatrix(a), i, j) == slot(a, i, j)
+  }
 
 }
-
-// A permutation is a sequence of transposition
-*/
 
 field val: Int // heap location per slot per matrix
 
 define M(i, j) slot(m,i,j).val // maybe use this in code?
 
 define access_matrix(m) forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < dim(m) && j < dim(m) ==> acc(slot(m,i,j).val)
+define access_matrix_frac(m, p) forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < dim(m) && j < dim(m) ==> acc(slot(m,i,j).val, p)
+
 define access_row(m, i) forall j:Int :: {slot(m,i,j)} 0 <= j && j < dim(m) ==> acc(slot(m,i,j).val)
+define access_row_frac(m, i, p) forall j:Int :: {slot(m,i,j)} 0 <= j && j < dim(m) ==> acc(slot(m,i,j).val, p)
+
 define access_column(m, j) forall i:Int :: {slot(m,i,j)} 0 <= i && i < dim(m) ==> acc(slot(m,i,j).val)
+define access_column_frac(m, j, p) forall i:Int :: {slot(m,i,j)} 0 <= i && i < dim(m) ==> acc(slot(m,i,j).val, p)
 
-
-// rep_row(m, row, s, 0)
 function rep_row(m: NMatrix, row: Int, s: Multiset[Int], j: Int): Bool
-  requires access_row(m, row)
+  requires access_row_frac(m, row, 1/2)
   requires j >= 0 && j <= dim(m)
   requires row >= 0 && row < dim(m)
 {
@@ -68,7 +50,7 @@ function rep_row(m: NMatrix, row: Int, s: Multiset[Int], j: Int): Bool
 }
 
 function rep_column(m: NMatrix, column: Int, s: Multiset[Int], i: Int): Bool
-  requires access_column(m, column)
+  requires access_column_frac(m, column, 1/2)
   requires i >= 0 && i <= dim(m)
   requires column >= 0 && column < dim(m)
 {
@@ -80,30 +62,10 @@ function ind_ms(i: Int, s: Seq[Multiset[Int]]): Bool
   i >= 0 && i < |s|
 }
 
-function rep_matrix_by_row(m: NMatrix, s: Seq[Multiset[Int]]): Bool
-  requires access_matrix(m)
-{
-  |s| == dim(m) && forall i:Int :: { ind_ms(i, s) } ind_ms(i, s) ==> rep_row(m, i, s[i], 0)
-}
-
-function rep_matrix_by_column(m: NMatrix, s: Seq[Multiset[Int]]): Bool
-  requires access_matrix(m)
-{
-  |s| == dim(m) && forall j:Int :: { ind_ms(j, s) } ind_ms(j, s) ==> rep_column(m, j, s[j], 0)
-}
-
 function union_seq_multi(s: Seq[Multiset[Int]]): Multiset[Int]
 {
   |s| == 0 ? Multiset() : s[0] union union_seq_multi(s[1..])
 }
-
-method represent_by_row(m: NMatrix) returns (by_row: Seq[Multiset[Int]], by_column: Seq[Multiset[Int]])
-  requires access_matrix(m)
-  ensures access_matrix(m)
-  ensures rep_matrix_by_row(m, by_row)
-  ensures rep_matrix_by_column(m, by_column)
-  ensures union_seq_multi(by_row) == union_seq_multi(by_column)
-
 
 method allocMatrix(d:Int) returns (m: NMatrix)
   requires d >= 0
@@ -117,134 +79,6 @@ function ind_ss(a: Seq[Seq[Int]], i: Int): Bool
   i >= 0 && i < |a|
 }
 
-domain square_map
-{
-  function sdim(s: square_map): Int
-  function sfst(s: square_map, i: Int, j: Int): Int
-  function ssnd(s: square_map, i: Int, j: Int): Int
-
-  function compose_row(s: square_map, a: Seq[Int], row: Int): square_map
-  function compose_column(s: square_map, a: Seq[Int], column: Int): square_map
-
-  axiom compose_row_def {
-    forall s:square_map, a:Seq[Int], row: Int :: { compose_row(s, a, row) } |a| == sdim(s) ==>
-    (
-      sdim(compose_row(s, a, row)) == sdim(s) &&
-      forall j:Int :: { valid(s, row, j) } valid(s, row, j) ==> (
-        sfst(compose_row(s, a, row), row, j) == sfst(s, row, a[j])
-        && ssnd(compose_row(s, a, row), row, j) == ssnd(s, row, a[j])
-      ) &&
-      forall i: Int, jj:Int :: { valid(s, i, jj) } valid(s, i, jj) && i != row ==> (
-        sfst(compose_row(s, a, row), i, jj) == sfst(s, i, jj)
-        && ssnd(compose_row(s, a, row), i, jj) == ssnd(s, i, jj)
-      )
-    )
-  }
-
-  axiom compose_column_def {
-    forall s:square_map, a:Seq[Int], column: Int :: { compose_column(s, a, column) } |a| == sdim(s) ==>
-    (
-      sdim(compose_column(s, a, column)) == sdim(s) &&
-      forall i:Int :: { valid(s, i, column) } valid(s, i, column) ==> (
-        sfst(compose_column(s, a, column), i, column) == sfst(s, a[i], column)
-        && ssnd(compose_column(s, a, column), i, column) == ssnd(s, a[i], column)
-      ) &&
-      forall ii: Int, j:Int :: { valid(s, ii, j) } valid(s, ii, j) && j != column ==> (
-        sfst(compose_column(s, a, column), ii, j) == sfst(s, ii, j)
-        && ssnd(compose_column(s, a, column), ii, j) == ssnd(s, ii, j)
-      )
-    )
-  }
-
-  function valid(s: square_map, i: Int, j: Int): Bool
-
-  axiom valid_def {
-    forall i:Int, j:Int, s: square_map :: { valid(s, i, j) }  valid(s, i, j) <==>
-    i >= 0 && j >= 0 && i < sdim(s) && j < sdim(s)
-  }
-
-}
-
-function unique_square_map(s: square_map): Bool
-{
-  forall i1:Int, j1:Int, i2: Int, j2: Int :: { valid(s, i1, j1), valid(s, i2, j2) } valid(s, i1, j1) && valid(s, i2, j2) &&
-    (i1 != i2 || j1 != j2) ==> (sfst(s, i1, j1) != sfst(s, i2, j2) || ssnd(s, i1, j1) != ssnd(s, i2, j2))
-}
-
-function correct_square_map(s: square_map): Bool
-{
-  forall i:Int, j: Int :: { valid(s, i, j) } valid(s, i, j) ==> sfst(s, i, j) >= 0 && sfst(s, i, j) < sdim(s) && ssnd(s, i, j) >= 0 && ssnd(s, i, j) < sdim(s)
-}
-
-function unique_seq(a: Seq[Int]): Bool
-{
-    forall i:Int, j:Int :: { ind(a, i), ind(a, j) } ind(a, i) && ind(a, j) && i != j ==> a[i] != a[j]
-}
-
-/*
-function unique_seq_seq(fst: Seq[Seq[Int]], snd: Seq[Seq[Int]]): Bool
-{
-    forall i1:Int, j1:Int, i2:Int, j2:Int :: { ind_ss(a, i1), ind(a[i1], j1), ind_ss(a, i2), ind(a[i2], j2) }
-    (ind_ss(a, i1) && ind(a[i1], j1) && ind_ss(a, i2) && ind(a[i2], j2) && (i1 != i2 || j1 != j2)) ==> a[i1][j1] != a[i2][j2]
-}
-*/
-/*
-function rep_matrix(m: NMatrix, r: Seq[Seq[Int]]): Bool
-  requires access_matrix(m)
-{
-  dim(m) == |r| &&
-  forall i:Int :: { ind_ss(r, i) } ind_ss(r, i) ==>
-    |r[i]| == dim(m) &&
-      forall j:Int :: { ind(r[i], j) } ind(r[i], j) ==>
-        r[i][j] == slot(m, i, j).val
-}
-*/
-function map_row_seq(a: Seq[Seq[Int]], b: Seq[Seq[Int]], m: Seq[Int], row: Int): Bool
-{
-  |a| == |b| && ind_ss(a, row) && |a[row]| == |b[row]| && 
-    forall j:Int :: { ind(a[row], j) } ind(a[row], j) ==> a[row][j] == b[row][j]
-}
-
-define map_row(m, row, p) forall j:Int :: {slot(m, row, j)} {ind(p, j)} ind(p, j) ==> slot(m, row, p[j]).val == old(slot(m, row, j).val)
-
-
-// p is the mapping from old indices to new indices
-method sort_row(m: NMatrix, row: Int, ascending: Bool) returns (p: Seq[Int])
-  requires access_row(m, row)
-  ensures access_row(m, row)
-  ensures |p| == dim(m)
-  ensures unique_seq(p)
-  ensures forall i:Int :: { ind(p, i) } ind(p, i) ==> p[i] >= 0 && p[i] < |p|
-  ensures map_row(m, row, p)
-/*
-function matrices_permutations(a: NMatrix, b: NMatrix, s: square_map): Bool
-  requires access_matrix(a)
-  requires access_matrix(b)
-{
-  correct_square_map(s) && sdim(s) == dim(a) && dim(a) == dim(b) &&
-  forall i:Int, j:Int :: { valid(s, i, j) } valid(s, i, j) ==> M(a, i, j) == M(b, sfst(s, i, j), ssnd(s, i, j))
-}
-*/
-
-method lemma_map_row_good_perm(a: NMatrix, b: NMatrix, c: NMatrix, s: square_map, p: Seq[Int])
-  requires access_matrix(a)
-  requires access_matrix(b)
-  requires access_matrix(c)
-  
-  //requires matrices_permutations(a, b, s)
-  //requires map_row(b, row, p)
-
-
-
-method sort_column(m: NMatrix, column: Int) returns (p: Seq[Int])
-  requires access_column(m, column)
-  ensures access_column(m, column)
-  ensures |p| == dim(m)
-  ensures unique_seq(p)
-  ensures forall i:Int :: { ind(p, i) } ind(p, i) ==> p[i] >= 0 && p[i] < |p|
-  ensures forall i:Int :: {slot(m, i, column)} {ind(p, i)} ind(p, i) ==> slot(m, p[i], column).val == old(slot(m, i, column).val)
-
-
 function two_exponent(n: Int): Int
     ensures n >= 0 ==> result >= 1
     ensures n < 0 ==> result == 0
@@ -252,39 +86,192 @@ function two_exponent(n: Int): Int
     n > 0 ? 2 * two_exponent(n - 1) : (n == 0 ? 1 : 0)
 }
 
+method represent(m: NMatrix) returns (by_row: Seq[Multiset[Int]], by_column: Seq[Multiset[Int]], all: Multiset[Int])
+  requires access_matrix_frac(m, 1/2)
+  ensures |by_row| == dim(m) && |by_column| == dim(m)
+  ensures access_matrix_frac(m, 1/2)
+  ensures rep_matrix_by_row(m, by_row)
+  ensures rep_matrix_by_column(m, by_column)
+  ensures union_seq_multi(by_row) == all
+  ensures union_seq_multi(by_column) == all
+
+method represent_by_row(m: NMatrix) returns (by_row: Seq[Multiset[Int]])
+  requires access_matrix_frac(m, 1/2)
+  ensures |by_row| == dim(m)
+  ensures access_matrix_frac(m, 1/2)
+  ensures rep_matrix_by_row(m, by_row)
+
+method represent_by_column(m: NMatrix) returns (by_column: Seq[Multiset[Int]])
+  requires access_matrix_frac(m, 1/2)
+  ensures |by_column| == dim(m)
+  ensures access_matrix_frac(m, 1/2)
+  ensures rep_matrix_by_column(m, by_column)
+
+function rep_matrix_by_row(m: NMatrix, s: Seq[Multiset[Int]]): Bool
+  requires access_matrix_frac(m, 1/2)
+{
+  dim(m) == |s| &&
+    forall i:Int :: { rep_row(m, i, s[i], 0) } i >= 0 && i < |s| ==> rep_row(m, i, s[i], 0)
+}
+
+function rep_matrix_by_column(m: NMatrix, s: Seq[Multiset[Int]]): Bool
+  requires access_matrix_frac(m, 1/2)
+{
+  dim(m) == |s| &&
+    forall j:Int :: { rep_column(m, j, s[j], 0) } j >= 0 && j < |s| ==> rep_column(m, j, s[j], 0)
+}
+
+method lemma_rep_submatrix_row(m: NMatrix, by_row: Seq[Multiset[Int]]) returns (by_row_big: Seq[Multiset[Int]], by_row_residual: Multiset[Int])
+  requires access_matrix_frac(m, 1/2)
+  requires rep_matrix_by_row(m, by_row)
+  requires dim(m) >= 1
+  ensures access_matrix_frac(m, 1/2)
+  ensures rep_matrix_by_row(tl_submatrix(m), by_row_big)
+  ensures union_seq_multi(by_row_big) union by_row_residual == union_seq_multi(by_row)
+
+
+method lemma_rep_submatrix_column(m: NMatrix, by_column: Seq[Multiset[Int]]) returns (by_column_big: Seq[Multiset[Int]], by_column_residual: Multiset[Int])
+  requires access_matrix_frac(m, 1/2)
+  requires rep_matrix_by_column(m, by_column)
+  requires dim(m) >= 1
+  ensures access_matrix_frac(m, 1/2)
+  ensures rep_matrix_by_column(tl_submatrix(m), by_column_big)
+  ensures union_seq_multi(by_column_big) union by_column_residual == union_seq_multi(by_column)
+
+// TO PROVE
+method lemma_same_union(m: NMatrix, by_row: Seq[Multiset[Int]], by_column: Seq[Multiset[Int]])
+  requires access_matrix_frac(m, 2/3)
+  requires rep_matrix_by_row(m, by_row)
+  requires rep_matrix_by_column(m, by_column)
+  ensures access_matrix_frac(m, 2/3)
+  ensures union_seq_multi(by_column) == union_seq_multi(by_row)
+{
+  if (dim(m) == 0) {
+  }
+  else {
+    var n: Int := dim(m)
+
+    var a: NMatrix := tl_submatrix(m)
+
+    assert dim(a) == n - 1
+
+    var by_row_big: Seq[Multiset[Int]]
+    var by_row_residual: Multiset[Int]
+
+
+    assert rep_matrix_by_column(m, by_column)
+
+    by_row_big, by_row_residual := lemma_rep_submatrix_row(m, by_row)
+
+    assert rep_matrix_by_column(m, by_column)
+
+
+    var by_column_big: Seq[Multiset[Int]]
+    var by_column_residual: Multiset[Int]
+
+    assert rep_matrix_by_column(m, by_column)
+
+    by_column_big, by_column_residual := lemma_rep_submatrix_column(m, by_column)
+
+
+    lemma_same_union(a, by_row_big, by_column_big)
+
+
+
+
+    
+    assume false
+  }
+}
+
+
+// CODE
+
+method sort_row(m: NMatrix, row: Int, ascending: Bool, rep: Multiset[Int])
+  requires access_row(m, row)
+  requires row >= 0 && row < dim(m)
+  requires rep_row(m, row, rep, 0)
+  ensures access_row(m, row)
+  ensures rep_row(m, row, rep, 0)
+
+
+method sort_column(m: NMatrix, column: Int, rep: Multiset[Int])
+  requires access_column(m, column)
+  requires column >= 0 && column < dim(m)
+  requires rep_column(m, column, rep, 0)
+  ensures access_column(m, column)
+  ensures rep_column(m, column, rep, 0)
+
 method shearsort(n: Int, m: NMatrix)
   requires access_matrix(m)
   requires dim(m) == n
   ensures access_matrix(m)
 {
   var p: Int := 0
+
+  var by_row: Seq[Multiset[Int]]
+  var by_column: Seq[Multiset[Int]]
+  var all: Multiset[Int]
+  by_row, by_column, all := represent(m)
+
   // i < ceil(log2(n)) + 1
   // <=> i < log2(n) + 1
   // <=> i - 1 < log2(n)
   // <=> 2^(i - 1) < n
   // <=> two_exponent(i - 1) < n
-
   while (two_exponent(p - 1) < n)
     invariant access_matrix(m)
+    invariant rep_matrix_by_row(m, by_row)
+    invariant rep_matrix_by_column(m, by_column)
+    invariant union_seq_multi(by_row) == all
+    invariant union_seq_multi(by_column) == all
   {
-    var tid: Int
-    
-    tid := 0
-    while (tid < n)
-      invariant access_matrix(m)
-    {
-      var r: Seq[Int]
-      r := sort_row(m, tid, tid % 2 == 0)
-    }
 
-    tid := 0
-    while (tid < n)
-      invariant access_matrix(m)
-    {
-      var r: Seq[Int]
-      r := sort_column(m, tid)
-    }
+    // First inner parallel loop
+    exhale forall tid:Int :: { rep_row(m, tid, by_row[tid], 0) } tid >= 0 && tid < n ==> P1(m, tid, by_row)
+    inhale forall tid:Int :: { rep_row(m, tid, by_row[tid], 0) } tid >= 0 && tid < n ==> Q1(m, tid, by_row)
+    assert rep_matrix_by_row(m, by_row)
+
+    by_column := represent_by_column(m)
+    assert rep_matrix_by_column(m, by_column)
+
+    lemma_same_union(m, by_row, by_column)
+
+    assert rep_matrix_by_column(m, by_column)
+
+
+    // Second inner parallel loop
+    exhale forall tid:Int :: { rep_column(m, tid, by_column[tid], 0) } tid >= 0 && tid < n ==> P2(m, tid, by_column)
+    inhale forall tid:Int :: { rep_column(m, tid, by_column[tid], 0) } tid >= 0 && tid < n ==> Q2(m, tid, by_column)
+
+    assert rep_matrix_by_column(m, by_column)
+
+    by_row := represent_by_row(m)
+    lemma_same_union(m, by_row, by_column)
+
 
     p := p + 1
   }
+}
+
+// Parallel loops
+
+define P1(m, tid, by_row) access_row(m, tid) &&tid >= 0 && tid < dim(m) && |by_row| == dim(m) && rep_row(m, tid, by_row[tid], 0)
+define Q1(m, tid, by_row) access_row(m, tid) && rep_row(m, tid, by_row[tid], 0)
+
+method first_inner_loop(m: NMatrix, tid: Int, by_row: Seq[Multiset[Int]])
+  requires P1(m, tid, by_row)
+  ensures Q1(m, tid, by_row)
+{
+  sort_row(m, tid, tid % 2 == 0, by_row[tid])
+}
+
+define P2(m, tid, by_row) access_column(m, tid) && tid >= 0 && tid < dim(m) && |by_column| == dim(m) && rep_column(m, tid, by_column[tid], 0)
+define Q2(m, tid, by_row) access_column(m, tid) && rep_column(m, tid, by_column[tid], 0)
+
+method second_inner_loop(m: NMatrix, tid: Int, by_column: Seq[Multiset[Int]])
+  requires P2(m, tid, by_column)
+  ensures Q2(m, tid, by_column)
+{
+  sort_column(m, tid, by_column[tid])
 }
