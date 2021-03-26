@@ -17,25 +17,25 @@ predicate dll(head: Ref) {
 
 // only needs forward access
 method size(head: Ref) returns (count: Int)
-    requires list(head)
-    ensures list(head)
+    requires acc(list(head), 1/2)
+    ensures acc(list(head), 1/2)
     ensures count == size_list(head)
 {
     if (head != null) {
-        unfold list(head)
+        unfold acc(list(head), 1/2)
         count := size(head.next)
         count := count + 1
-        fold list(head)
+        fold acc(list(head), 1/2)
     } else {
         count := 0
     }
 }
 
 function size_list(head: Ref): Int
-    requires list(head)
+    requires acc(list(head), 1/2)
     ensures result >= 0
 {
-    head != null ? (unfolding list(head) in size_list(head.next) + 1) : 0
+    head != null ? (unfolding acc(list(head), 1/2) in size_list(head.next) + 1) : 0
 }
 
 method lemma_size_non_null_non_empty(head: Ref)
@@ -43,19 +43,6 @@ method lemma_size_non_null_non_empty(head: Ref)
     requires size_list(head) > 0
     ensures list(head) && head != null
 {
-}
-
-method dll_to_bst(head: Ref) returns (root: Ref)
-    requires list(head)
-    ensures bst(root)
-{
-    var n: Int
-    var right: Ref
-    n := size(head)
-    root, right := dll_to_bst_rec(head, n)
-
-    assert bst(root) && list(right)
-
 }
 
 // Converts a sorted DLL into a balanced BST
@@ -146,6 +133,17 @@ method lemma_bst_smaller_than_change_bound(root: Ref, a: Int, b: Int)
 
 }
 
+method dll_to_bst(head: Ref) returns (root: Ref)
+    requires list(head)
+    ensures bst(root) // Question 2
+    ensures old(sorted_list(head)) ==> is_bst(root) // Question 3
+{
+    var n: Int
+    var right: Ref
+    n := size(head)
+
+    root, right := dll_to_bst_rec(head, n)
+}
 
 method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
     requires list(head)
@@ -187,24 +185,8 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
         var v_root: Int := unfolding list(root) in root.data
         var v_head: Int := old(unfolding list(head) in head.data)
 
-        assert b && root != null && head != null ==> v_root >= v_head
-        assert b && right != null ==> bst_smaller_than(left, v_root)
-        assert b && head != null ==> bst_larger_than(left, v_head)
-
-
-        assert size_bst(left) == n/2
-        assert bst(left) && list(root)
-
-        assert b ==> sorted_list(root) && is_bst(left)
-
-        assert b ==> sorted_list(root)
-
         unfold list(root)
 
-        
-        assert b ==>  sorted_list(root.next)
-
-        // Needs access to root.prev
         root.prev := left
 
         // Recursively construct the right subtree
@@ -212,8 +194,11 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
         var temp: Ref
 
         label before_second_call
-        
         temp, right := dll_to_bst_rec(root.next, n-n/2-1)
+
+        // Termination:
+        assert n - n/2 - 1 < n
+        assert n >= 0
 
         var old_root_next: Ref := root.next
 
@@ -223,46 +208,12 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
         }
         else {
             v_root_next := v_root
-            assert temp == null
-            assert bst_larger_than(temp, v_root_next)
         }
-
-        assert old[before_second_call](sorted_list(root.next)) && root.next != null
-            ==> bst_larger_than(temp, v_root_next)
-
-        assert b && old_root_next != null ==> bst_larger_than(temp, v_root_next)
-
-
-    
-
 
         var v_right: Int
         if (right != null) {
             v_right := unfolding list(right) in right.data
         }
-
-        assert b && root.next != null ==> bst_larger_than(temp, v_root_next)
-
- 
-
-        // Termination:
-        assert n - n/2 - 1 < n
-        assert n >= 0
-
-
-        assert size_bst(temp) == n-n/2-1
-        assert bst(temp) && list(right)
-
-        assert b ==> sorted_list(right) && is_bst(temp)
-
-
-        assert b ==> is_bst(left) && is_bst(temp)
-
-        assert b && root.next != null ==> bst_larger_than(temp, v_root_next)
-
-
-
-        assert b && root.next != null ==> bst_larger_than(temp, v_root_next)
 
         // [head, root) is a tree rooted at left, [root.next, right) is tree at temp
         // Set pointer to right subtree
@@ -271,71 +222,24 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
 
         //assert b && root.next != null ==> bst_larger_than(temp, v_root_next)
 
-
-
-
-        assert b && head != null ==> bst_larger_than(left, v_head)
-
-        assert b ==> is_bst(root.prev)
-        assert b ==> is_bst(root.next)
-
-        assert b ==> bst_smaller_than(root.prev, root.data)
         if (b && root.next != null) {
-
-            assert b && old_root_next != null ==> bst_larger_than(temp, v_root_next)
-            assert old_root_next != null ==> bst_larger_than(root.next, v_root_next)
-
-
-            assert head != null ==> bst_larger_than(temp, v_root_next)
-
-            assert v_root <= v_root_next
-
             lemma_bst_larger_than_change_bound(root.next, v_root_next, v_root)
-            assert bst_larger_than(root.next, v_root)
         }
 
-
-        assert b && right != null ==> bst_smaller_than(left, v_root) && bst_smaller_than(temp, v_right)
-
         if (b && right != null) {
-            assert bst_smaller_than(root.prev, v_root)
-            assert bst_smaller_than(temp, v_right)
-
-            assert v_right >= v_root
-
             lemma_bst_smaller_than_change_bound(root.prev, v_root, v_right)
         }
 
         if (b && head != null) {
             // root.prev = left
             // root.next = temp
-
-
-            assert bst_larger_than(root.prev, v_head)
-
-            assert root.next != null ==> bst_larger_than(root.next, v_root_next)
-
-            assert root != null ==> v_root >= v_head
-            assert v_root_next >= v_head
-
             lemma_bst_larger_than_change_bound(root.next, v_root_next, v_head)
-
         }
         fold bst(root)
-
-
-
-        assert old(sorted_list(head)) ==> sorted_list(right) && is_bst(root)
-
-
-        assert size_bst(root) == n/2 + n - n/2
-        assert size_bst(root) == n
 
     } else {
         root := null
         right := head
         fold bst(root)
-
-        assert old(sorted_list(head)) && right != null ==> unfolding list(right) in bst_smaller_than(root, right.data)
     }
 }
