@@ -363,6 +363,43 @@ method shearsort(n: Int, m: NMatrix)
   }
 }
 
+function asRowColSeqSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, 1/2)
+    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row < dim(m) ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+// easy to implement if needed
+
+function asColRowSeqSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, 1/2)
+    ensures |result| == dim(m) && (forall col:Int , row: Int :: {result[col][row]}{M(row,col)} 0 <= col && col < dim(m) ==> 
+      |result[col]| == dim(m) && (0 <= row && row < dim(m) ==> result[col][row] == M(row,col)))
+// easy to implement if needed
+
+function sortSeq(s:Seq[Int], incrOrder: Bool) : Seq[Int]
+  ensures |result| == |s| && // some way of expressing permutation
+    forall i:Int, j:Int :: 0 <= i && i < j && j < |s| ==> (incrOrder ? s[i] <= s[j] : s[i] >= s[j])
+
+function firstIndexLarger(s:Seq[Int], k:Int) : Int
+  ensures 0 <= result && result <= |s|
+  ensures result < |s| ==> s[result] >= k
+  ensures forall i:Int :: 0 <= i && i < result ==> s[i] < k 
+
+function lastIndexSmaller(s:Seq[Int], k:Int) : Int
+  ensures -1 <= result && result < |s|
+  ensures result + 1 < |s| ==> s[result + 1] > k
+  ensures forall i:Int :: 0 <= i && i <= result ==> s[i] <= k 
+
+function countEltsGeq(s:Seq[Int], k:Int) : Int
+  
+define countGt(s,k) (|s| - lastIndexSmaller(sortSeq(s,true),k))
+// give me some column index for a column (columns as in s) with the minimal number of entries > k
+function colmin_gt(m: NMatrix, s: Seq[Seq[Int]], k:Int) : Int
+  requires access_matrix_frac(m, 1/2)
+  requires asColRowSeqSeq(m) == s
+  ensures 0 <= result && result < dim(m) && forall col : Int :: 0 <= col && col < dim(m) && col != result ==> countGt(s[result],k) <= countGt(s[col],k)
+
+
 // Parallel loops
 
 define P1(m, tid, by_row) access_row(m, tid) &&tid >= 0 && tid < dim(m) && |by_row| == dim(m) && rep_row(m, tid, by_row[tid], 0)
