@@ -1,3 +1,5 @@
+import <decreases/int.vpr>
+
 domain IArray {
   function slot(a: IArray, i: Int): Ref
   function len(a: IArray): Int
@@ -32,11 +34,13 @@ function lexicoLess(s1:Seq[Int], s2:Seq[Int]) : Bool
     firstDiff(s1,s2) < |s1| && s1[firstDiff(s1,s2)] < s2[firstDiff(s1,s2)]
 }
 
-method test(s1:Seq[Int], s2:Seq[Int], s3:Seq[Int])
+method ProveLexicoLessIsStrictTotalOrder(s1:Seq[Int], s2:Seq[Int], s3:Seq[Int])
   requires |s1| == |s2| && |s2| == |s3|
 {
-  assert s1 != s2 ==> (lexicoLess(s1,s2) || lexicoLess(s2,s1))
-  assert lexicoLess(s1,s2) && lexicoLess(s2,s3) ==> lexicoLess(s1,s3) // TODO: WOW!
+  assert s1 != s2 ==> (lexicoLess(s1,s2) || lexicoLess(s2,s1)) // trichotomy for strict total order
+  assert !lexicoLess(s1,s1) // irreflexivity
+  assert lexicoLess(s1,s2) && lexicoLess(s2,s3) ==> lexicoLess(s1,s3) // transitivity
+  assert !(lexicoLess(s2,s3) && lexicoLess(s3,s2)) // anti-symmetry
 }
 
 field val : Int // heap location per array slot per array
@@ -50,25 +54,10 @@ define A(i) slot(a,i).val
 function toSeq(a:IArray) : Seq[Int]
   requires ARRAYPERMS(a)
   ensures |result| == len(a) && forall i:Int :: {A(i)}{result[i]} 0 <= i && i < len(a) ==> A(i) == result[i]
-// TODO (maybe): could implement simply
+// TODO (maybe): could implement simply (but obvious)
 
 function isPerm(s1:Seq[Int], s2:Seq[Int]) : Bool
   requires |s1| == |s2|
-
-method foo(a:IArray)
-  requires ARRAYPERMS(a)
-{
-    var k : Int 
-    var l : Int 
-    assume 0 <= k && k <= l && l < len(a) && A(k) > A(l)
-    var s : Seq[Int]
-    s := toSeq(a)
-    swap(a,k,l)
-    var t : Seq[Int]
-    t := toSeq(a)
-    assert lexicoLess(t,s)
-    assert permutation(t,s)
-}
 
 method swap(a:IArray, j:Int, k:Int)
   requires 0 <= j && 0 <= k && j < len(a) && k < len(a)
@@ -142,6 +131,7 @@ method permut(aptr: Ref) returns (res : Seq[Seq[Int]]) // result is a reserved n
     more := next(a)
     while(more)
       invariant ARRAYPERMS(a)
+      
     {
         res := res ++ Seq(toSeq(a))
     }
@@ -152,15 +142,21 @@ method permut(aptr: Ref) returns (res : Seq[Seq[Int]]) // result is a reserved n
 method next(a:IArray) returns (b:Bool)
   requires ARRAYPERMS(a)
   ensures ARRAYPERMS(a)
+  // Task 3 property verified:
+  // Task 10 property (as far as possible without Task 9; i.e. just lexicographic ordering) verified: 
   ensures b ==> permutation(old(toSeq(a)),toSeq(a)) && lexicoLess(old(toSeq(a)),toSeq(a)) // next is a permutation and lexicographically larger
+  // Task 4 property verified:
+  ensures !b ==> (forall k:Int :: {A(k)} 0 <= k && k < len(a) ==> A(k) == old(A(k))) && forall k:Int, l:Int :: {A(k),A(l)} 0 <= k && k < l && l < len(a) ==> A(k) >= A(l)
 {
   var i: Int := len(a) - 1;
   
+  // Task 2 property verified via "decreases" clauses on each while loop
   while(i > 0 && A(i-1) >= A(i)) 
     invariant i < len(a) && (len(a) > 0 ==> i >= 0) // funny corner case as len(a) can be 0 so i might have always been negative..
     invariant ARRAYPERMSREAD(a)
     // array values increasing from i to the end:
     invariant len(a) > 0 ==> forall k: Int, l: Int :: i <= k && k < l && l < len(a) ==> A(k) >= A(l)
+    decreases i // termination
   {
     i := i - 1;
   }
@@ -174,6 +170,7 @@ method next(a:IArray) returns (b:Bool)
       while(A(j) <= A(j-1))
         invariant ARRAYPERMSREAD(a)
         invariant i <= j && j < len(a)
+        decreases j // termination
         {
           j := j - 1;
         }
@@ -196,11 +193,13 @@ method next(a:IArray) returns (b:Bool)
         // unchanged regions:
         invariant forall k:Int :: {A(k)} 0 <= k && k < len(a) && (k < oldi || k > oldj || i <= k && k <= j) ==> A(k) == old[preloop](A(k))
         invariant permutation(old(toSeq(a)),toSeq(a))
+        decreases (j-i) // termination
         {
             swap(a,i,j)
             i := i + 1
             j := j - 1
         }
+      b := true // "return true"
   }
 
 }
