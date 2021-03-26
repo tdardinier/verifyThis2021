@@ -1,4 +1,4 @@
-// import <decreases/int.vpr>
+import <decreases/predicate_instance.vpr>
 
 // Fields
 
@@ -9,6 +9,7 @@ field next: Ref // Also used as right subtree pointer
 
 // Actual code
 
+// termination measure: length(head)
 method size(head: Ref) returns (count: Int)
     requires acc(list(head), 1/2)
     ensures acc(list(head), 1/2)
@@ -16,7 +17,11 @@ method size(head: Ref) returns (count: Int)
 {
     if (head != null) {
         unfold acc(list(head), 1/2)
+
+        // Termination check
+        assert length(head.next) < old(length(head))
         count := size(head.next)
+
         count := count + 1
         fold acc(list(head), 1/2)
     } else {
@@ -38,6 +43,7 @@ method iterative_size(head: Ref) returns (count: Int)
         invariant acc(list(c), 1/2)
         invariant acc(list(c), 1/2) --* acc(list(head), 1/2)
         invariant old(length(head)) == count + length(c)
+        decreases list(c)
     {
         unfold acc(list(c), 1/2)
         count := count + 1
@@ -198,6 +204,7 @@ predicate tree(root: Ref) {
 
 // Functions
 
+// Well-founded order
 function length(head: Ref): Int
     requires acc(list(head), 1/2)
     ensures result >= 0

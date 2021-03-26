@@ -41,22 +41,6 @@ define access_row_frac(m, i, p) forall j:Int :: {slot(m,i,j)} 0 <= j && j < dim(
 define access_column(m, j) forall i:Int :: {slot(m,i,j)} 0 <= i && i < dim(m) ==> acc(slot(m,i,j).val)
 define access_column_frac(m, j, p) forall i:Int :: {slot(m,i,j)} 0 <= i && i < dim(m) ==> acc(slot(m,i,j).val, p)
 
-function rep_row(m: NMatrix, row: Int, s: Multiset[Int], j: Int): Bool
-  requires access_row_frac(m, row, 1/4)
-  requires j >= 0 && j <= dim(m)
-  requires row >= 0 && row < dim(m)
-{
-  j == dim(m) ? |s| == 0 : (M(row, j) in s) > 0 && rep_row(m, row, s setminus Multiset( M(row, j) ), j + 1)
-}
-
-function rep_column(m: NMatrix, column: Int, s: Multiset[Int], i: Int): Bool
-  requires access_column_frac(m, column, 1/4)
-  requires i >= 0 && i <= dim(m)
-  requires column >= 0 && column < dim(m)
-{
-  i == dim(m) ? |s| == 0 : (M(i, column) in s) > 0 && rep_column(m, column, s setminus Multiset( M(i, column) ), i + 1)
-}
-
 function ind_ms(i: Int, s: Seq[Multiset[Int]]): Bool
 {
   i >= 0 && i < |s|
@@ -182,27 +166,21 @@ method represent_by_column(m: NMatrix) returns (by_column: Seq[Multiset[Int]])
   by_column := represent_by_column_rec(m, dim(m))
 }
 
-function rep_matrix_by_row(m: NMatrix, s: Seq[Multiset[Int]]): Bool
-  requires access_matrix_frac(m, 1/2)
-{
-  dim(m) == |s| &&
-    forall i:Int :: { rep_row(m, i, s[i], 0) } i >= 0 && i < |s| ==> rep_row(m, i, s[i], 0)
-}
-
 function rep_matrix_by_column(m: NMatrix, s: Seq[Multiset[Int]]): Bool
-  requires access_matrix_frac(m, 1/2)
+  requires access_matrix_frac(m, wildcard)
 {
   dim(m) == |s| &&
-    forall j:Int :: { rep_column(m, j, s[j], 0) } j >= 0 && j < |s| ==> rep_column(m, j, s[j], 0)
+    forall j:Int :: { s[j] } j >= 0 && j < |s| ==> rep_column(m, j, s[j], 0)
 }
 
-method lemma_rep_column_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multiset[Int], i: Int)
+method lemma_rep_column_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multiset[Int], i: Int, p: Perm)
+  requires p > none
   requires c >= 0 && c < dim(m)
-  requires access_column_frac(m, c, 1/2)
+  requires access_column_frac(m, c, p)
   requires i >= 0 && i <= dim(m)
   requires rep_column(m, c, r1, i)
   requires rep_column(m, c, r2, i)
-  ensures access_column_frac(m, c, 1/2)
+  ensures access_column_frac(m, c, p)
   ensures r1 == r2
 {
   if (i < dim(m)) {
@@ -210,18 +188,18 @@ method lemma_rep_column_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multis
     var b: Multiset[Int] := r2 setminus Multiset( M(i, c) )
     assert r1 == Multiset(M(i, c)) union a
     assert r2 == Multiset(M(i, c)) union b
-    lemma_rep_column_unique(m, c, a, b , i + 1)
+    lemma_rep_column_unique(m, c, a, b , i + 1, p)
   }
 }
 
 
 method lemma_rep_row_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multiset[Int], i: Int)
   requires c >= 0 && c < dim(m)
-  requires access_row_frac(m, c, 1/2)
+  requires access_row_frac(m, c, 1/5)
   requires i >= 0 && i <= dim(m)
   requires rep_row(m, c, r1, i)
   requires rep_row(m, c, r2, i)
-  ensures access_row_frac(m, c, 1/2)
+  ensures access_row_frac(m, c, 1/5)
   ensures r1 == r2
 {
   if (i < dim(m)) {
@@ -233,7 +211,100 @@ method lemma_rep_row_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multiset[
   }
 }
 
-// TO PROVE
+function rep_row(m: NMatrix, row: Int, s: Multiset[Int], j: Int): Bool
+  requires access_row_frac(m, row, wildcard)
+  requires j >= 0 && j <= dim(m)
+  requires row >= 0 && row < dim(m)
+{
+  j == dim(m) ? |s| == 0 : (M(row, j) in s) > 0 && rep_row(m, row, s setminus Multiset( M(row, j) ), j + 1)
+}
+
+function rep_matrix_by_row(m: NMatrix, s: Seq[Multiset[Int]]): Bool
+  requires access_matrix_frac(m, wildcard)
+{
+  dim(m) == |s| &&
+    forall i:Int :: { s[i] } i >= 0 && i < |s| ==> rep_row(m, i, s[i], 0)
+}
+
+function rep_column(m: NMatrix, column: Int, s: Multiset[Int], i: Int): Bool
+  requires access_column_frac(m, column, wildcard)
+  requires i >= 0 && i <= dim(m)
+  requires column >= 0 && column < dim(m)
+{
+  i == dim(m) ? |s| == 0 : (M(i, column) in s) > 0 && rep_column(m, column, s setminus Multiset( M(i, column) ), i + 1)
+}
+
+
+method lemma_rep_submatrix_row_rec(m: NMatrix, by_row: Seq[Multiset[Int]], n: Int, by_row_big: Seq[Multiset[Int]], r1: Multiset[Int], r2: Multiset[Int], r3: Multiset[Int])
+  requires access_matrix_frac(m, 3/7)
+  requires rep_matrix_by_row(m, by_row)
+  requires dim(m) >= 1
+  requires n >= 0 && n <= dim(m) - 1
+  requires rep_matrix_by_row(tl_submatrix(m), by_row_big)
+  requires rep_column(m, dim(m) - 1, r1, n)
+  requires rep_row(m, dim(m) - 1, r3, 0)
+  requires r2 == Multiset(M(dim(m) - 1, dim(m) - 1))
+
+  ensures access_matrix_frac(m, 3/7)
+  ensures union_seq_multi(by_row_big[n..]) union r1 union r3 setminus r2 == union_seq_multi(by_row[n..])
+{
+  if (n == dim(m) - 1) {
+    assert by_row_big[n..] == Seq()
+    assert union_seq_multi(by_row_big[n..]) == Multiset()
+    assert (M(n, n) in r1) > 0 
+    assert rep_column(m, n, r1 setminus Multiset( M(n, n) ), n + 1)
+    assert r1 == Multiset(M(dim(m) - 1, dim(m) - 1))
+    assert rep_row(m, dim(m) - 1, by_row[n], 0)
+    assert by_row[n..] == Seq(by_row[n])
+    lemma_rep_row_unique(m, dim(m) - 1, by_row[n], r3, 0)
+    assert union_seq_multi(by_row[n..]) == r3
+    assert union_seq_multi(by_row_big[n..]) union r1 union r3 setminus r2 == Multiset() union Multiset(M(dim(m) - 1, dim(m) - 1)) union union_seq_multi(by_row[n..]) setminus Multiset(M(dim(m) - 1, dim(m) - 1))
+  }
+  else {
+    var new_r1: Multiset[Int] := r1 setminus Multiset(M(n, dim(m) - 1))
+    assert rep_column(m, dim(m) - 1, r1, n)
+    assert rep_column(m, dim(m) - 1, new_r1, n + 1) 
+    lemma_rep_submatrix_row_rec(m, by_row, n + 1, by_row_big, new_r1, r2, r3)
+  }
+}
+
+// Some facts are admitted at the end of the proof of this lemma
+method lemma_rep_submatrix_column_rec(m: NMatrix, by_column: Seq[Multiset[Int]], n: Int, by_column_big: Seq[Multiset[Int]], r1: Multiset[Int], r2: Multiset[Int], r3: Multiset[Int], p: Perm)
+  requires p > none
+  requires access_matrix_frac(m, p)
+  requires rep_matrix_by_column(m, by_column)
+  requires dim(m) >= 1
+  requires n >= 0 && n <= dim(m) - 1
+  requires rep_matrix_by_column(tl_submatrix(m), by_column_big)
+  requires rep_row(m, dim(m) - 1, r1, n)
+  requires rep_column(m, dim(m) - 1, r3, 0)
+  requires r2 == Multiset(M(dim(m) - 1, dim(m) - 1))
+
+  ensures access_matrix_frac(m, p)
+  ensures union_seq_multi(by_column_big[n..]) union r3 union r1 setminus r2 == union_seq_multi(by_column[n..])
+{
+  if (n == dim(m) - 1) {
+    assert by_column_big[n..] == Seq()
+    assert union_seq_multi(by_column_big[n..]) == Multiset()
+    assert (M(n, n) in r1) > 0 
+    assert rep_row(m, n, r1 setminus Multiset( M(n, n) ), n + 1)
+    assert r1 == Multiset(M(dim(m) - 1, dim(m) - 1))
+    assert rep_column(m, dim(m) - 1, by_column[n], 0)
+    assert by_column[n..] == Seq(by_column[n])
+    lemma_rep_column_unique(m, dim(m) - 1, by_column[n], r3, 0, p)
+    assert union_seq_multi(by_column[n..]) == r3
+    assert union_seq_multi(by_column_big[n..]) union r1 union r3 setminus r2 == Multiset() union Multiset(M(dim(m) - 1, dim(m) - 1)) union union_seq_multi(by_column[n..]) setminus Multiset(M(dim(m) - 1, dim(m) - 1))
+  }
+  else {
+    var new_r1: Multiset[Int] := r1 setminus Multiset(M(dim(m) - 1, n))
+    assert rep_row(m, dim(m) - 1, r1, n)
+    assert rep_row(m, dim(m) - 1, new_r1, n + 1) 
+    assert rep_row(m, dim(m) - 1, r1, n)
+
+    lemma_rep_submatrix_column_rec(m, by_column, n + 1, by_column_big, new_r1, r2, r3, p / 2)
+  }
+}
+
 method lemma_rep_submatrix_row(m: NMatrix, by_row: Seq[Multiset[Int]]) returns (by_row_big: Seq[Multiset[Int]], r1: Multiset[Int], r2: Multiset[Int], r3: Multiset[Int])
   requires access_matrix_frac(m, 1/2)
   requires rep_matrix_by_row(m, by_row)
@@ -241,25 +312,38 @@ method lemma_rep_submatrix_row(m: NMatrix, by_row: Seq[Multiset[Int]]) returns (
   ensures access_matrix_frac(m, 1/2)
   ensures rep_matrix_by_row(tl_submatrix(m), by_row_big)
 
-  ensures union_seq_multi(by_row_big) union r1 union r2 union r3 == union_seq_multi(by_row)
+  ensures union_seq_multi(by_row_big) union r1 union r3 setminus r2 == union_seq_multi(by_row)
   
   ensures rep_column(m, dim(m) - 1, r1, 0)
   ensures r2 == Multiset(M(dim(m) - 1, dim(m) - 1))
   ensures rep_row(m, dim(m) - 1, r3, 0)
+{
+  by_row_big := represent_by_row(tl_submatrix(m))
+  r2 := Multiset(M(dim(m) - 1, dim(m) - 1))
+  r1 := create_rep_by_column(m, dim(m) - 1, 0)
+  r3 := create_rep_by_row(m, dim(m) - 1, 0)
+  lemma_rep_submatrix_row_rec(m, by_row, 0, by_row_big, r1, r2, r3)
+}
 
-// TO PROVE
 method lemma_rep_submatrix_column(m: NMatrix, by_column: Seq[Multiset[Int]]) returns (by_column_big: Seq[Multiset[Int]], r1: Multiset[Int], r2: Multiset[Int], r3: Multiset[Int])
   requires access_matrix_frac(m, 1/2)
   requires rep_matrix_by_column(m, by_column)
   requires dim(m) >= 1
   ensures access_matrix_frac(m, 1/2)
   ensures rep_matrix_by_column(tl_submatrix(m), by_column_big)
-  
-  ensures union_seq_multi(by_column_big) union r1 union r2 union r3 == union_seq_multi(by_column)
+
+  ensures union_seq_multi(by_column_big) union r1 union r3 setminus r2 == union_seq_multi(by_column)
   
   ensures rep_column(m, dim(m) - 1, r1, 0)
   ensures r2 == Multiset(M(dim(m) - 1, dim(m) - 1))
   ensures rep_row(m, dim(m) - 1, r3, 0)
+{
+  by_column_big := represent_by_column(tl_submatrix(m))
+  r2 := Multiset(M(dim(m) - 1, dim(m) - 1))
+  r1 := create_rep_by_column(m, dim(m) - 1, 0)
+  r3 := create_rep_by_row(m, dim(m) - 1, 0)
+  lemma_rep_submatrix_column_rec(m, by_column, 0, by_column_big, r3, r2, r1, 1/4)
+}
 
 
 
@@ -293,7 +377,7 @@ method lemma_same_union(m: NMatrix, by_row: Seq[Multiset[Int]], by_column: Seq[M
 
 
     lemma_rep_row_unique(m, n - 1, row_r3, column_r3, 0)
-    lemma_rep_column_unique(m, n - 1, row_r1, column_r1, 0)
+    lemma_rep_column_unique(m, n - 1, row_r1, column_r1, 0, 1/3)
   }
 }
 
@@ -311,8 +395,6 @@ method represent(m: NMatrix) returns (by_row: Seq[Multiset[Int]], by_column: Seq
   all := union_seq_multi(by_row)
   lemma_same_union(m, by_row, by_column)
 }
-
-
 
 // CODE
 
