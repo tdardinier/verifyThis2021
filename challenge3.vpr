@@ -1,3 +1,5 @@
+import <decreases/int.vpr>
+
 // nxn matrix on heap
 
 domain NMatrix {
@@ -65,6 +67,7 @@ function ind_ss(a: Seq[Seq[Int]], i: Int): Bool
 
 function two_exponent(n: Int): Int
     ensures n >= 0 ==> result >= 1
+    ensures n > 0 ==> result == 2 * two_exponent(n-1)
     ensures n < 0 ==> result == 0
 {
     n > 0 ? 2 * two_exponent(n - 1) : (n == 0 ? 1 : 0)
@@ -418,6 +421,7 @@ method shearsort(n: Int, m: NMatrix)
   requires dim(m) == n
   ensures access_matrix(m)
 {
+  var k: Int // uninitialised - represents an "arbitrary bound" with respect to sorting properties proven
   var p: Int := 0
 
   var by_row: Seq[Multiset[Int]]
@@ -425,23 +429,34 @@ method shearsort(n: Int, m: NMatrix)
   var all: Multiset[Int]
   by_row, by_column, all := represent(m)
 
+  var rowsLessThanK : Int := 0
+  var rowsGtK : Int := dim(m)
+
   // i < ceil(log2(n)) + 1
   // <=> i < log2(n) + 1
   // <=> i - 1 < log2(n)
   // <=> 2^(i - 1) < n
   // <=> two_exponent(i - 1) < n
-  while (two_exponent(p - 1) < n)
+  // <=> two_exponent(i) < 2*n // avoids evaluating for 
+  while (two_exponent(p) < 2*n)
+    invariant p >= 0
     invariant access_matrix(m)
     invariant rep_matrix_by_row(m, by_row)
     invariant rep_matrix_by_column(m, by_column)
     invariant union_seq_multi(by_row) == all
     invariant union_seq_multi(by_column) == all
+    decreases 2*n - two_exponent(p) // task 1: Termination (memory safety is implicit with permissions)
+    //invariant forall r: Int :: 0 <= r && r < rowsLessThanK ==> // all values are <= k
+    //invariant forall r: Int :: rowsGtK <= r && r < dim(m) ==> // all values are >= k
   {
 
     // First inner parallel loop
-    exhale forall tid:Int :: { rep_row(m, tid, by_row[tid], 0) } tid >= 0 && tid < n ==> P1(m, tid, by_row)
-    inhale forall tid:Int :: { rep_row(m, tid, by_row[tid], 0) } tid >= 0 && tid < n ==> Q1(m, tid, by_row)
-    assert rep_matrix_by_row(m, by_row)
+    // Corresponds to forking n threads (per tid instance): the exhales model transfer of heap ownership && value info per thread
+    exhale forall tid:Int :: { by_row[tid] } tid >= 0 && tid < n ==> P1(m, tid, by_row)
+    // The corresponding loop body is checked in a separate Viper "method" first_inner_loop below
+    // Corresponds to joining n threads (per tid instance): the inhales model transfer of heap ownership && value info per thread
+    inhale forall tid:Int :: { by_row[tid] } tid >= 0 && tid < n ==> Q1(m, tid, by_row)
+    
 
     by_column := represent_by_column(m)
     assert rep_matrix_by_column(m, by_column)
@@ -450,12 +465,15 @@ method shearsort(n: Int, m: NMatrix)
 
     assert rep_matrix_by_column(m, by_column)
 
+    // counting rows idea:
+    //var asColRow : Seq[Seq[Int]] := asColRowSeqSeq(m)
+    //var fewestLtK : Int := colmin_lt(m,asColRow,k)
+    //var fewestGtK : Int := colmin_gt(m,asColRow,k)
+    // (fewestGtk - fewestLtK) * 2 <=  rowsGtK - rowsLessThanK
 
     // Second inner parallel loop
-    exhale forall tid:Int :: { rep_column(m, tid, by_column[tid], 0) } tid >= 0 && tid < n ==> P2(m, tid, by_column)
-    inhale forall tid:Int :: { rep_column(m, tid, by_column[tid], 0) } tid >= 0 && tid < n ==> Q2(m, tid, by_column)
-
-    assert rep_matrix_by_column(m, by_column)
+    exhale forall tid:Int :: { by_column[tid] } tid >= 0 && tid < n ==> P2(m, tid, by_column)
+    inhale forall tid:Int :: { by_column[tid] } tid >= 0 && tid < n ==> Q2(m, tid, by_column)
 
     by_row := represent_by_row(m)
     lemma_same_union(m, by_row, by_column)
@@ -464,6 +482,7 @@ method shearsort(n: Int, m: NMatrix)
     p := p + 1
   }
 }
+
 
 // Parallel loops
 
@@ -486,3 +505,48 @@ method second_inner_loop(m: NMatrix, tid: Int, by_column: Seq[Multiset[Int]])
 {
   sort_column(m, tid, by_column[tid])
 }
+
+
+
+function asRowColSeqSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, 1/2)
+    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row < dim(m) ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+// easy to implement if needed
+
+function asColRowSeqSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, 1/2)
+    ensures |result| == dim(m) && (forall col:Int , row: Int :: {result[col][row]}{M(row,col)} 0 <= col && col < dim(m) ==> 
+      |result[col]| == dim(m) && (0 <= row && row < dim(m) ==> result[col][row] == M(row,col)))
+// easy to implement if needed
+
+function sortSeq(s:Seq[Int], incrOrder: Bool) : Seq[Int]
+  ensures |result| == |s| && // some way of expressing permutation
+    forall i:Int, j:Int :: 0 <= i && i < j && j < |s| ==> (incrOrder ? s[i] <= s[j] : s[i] >= s[j])
+
+function firstIndexStrictlyLarger(s:Seq[Int], k:Int) : Int
+  ensures 0 <= result && result <= |s|
+  ensures result < |s| ==> s[result] > k
+  ensures forall i:Int :: 0 <= i && i < result ==> s[i] <= k 
+
+function lastIndexStrictlySmaller(s:Seq[Int], k:Int) : Int
+  ensures -1 <= result && result < |s|
+  ensures result + 1 < |s| ==> s[result + 1] >= k
+  ensures forall i:Int :: 0 <= i && i <= result ==> s[i] < k 
+
+function countEltsGeq(s:Seq[Int], k:Int) : Int
+  
+define countGt(s,k) (|s| - lastIndexStrictlySmaller(sortSeq(s,true),k))
+// give me some column index for a column (columns as in s) with the minimal number of entries >= k
+function colmin_gt(m: NMatrix, s: Seq[Seq[Int]], k:Int) : Int
+  requires access_matrix_frac(m, 1/2)
+  requires asColRowSeqSeq(m) == s
+  ensures 0 <= result && result < dim(m) && forall col : Int :: 0 <= col && col < dim(m) && col != result ==> countGt(s[result],k) <= countGt(s[col],k)
+
+define countLt(s,k) (firstIndexStrictlyLarger(sortSeq(s,true),k))
+// give me some column index for a column (columns as in s) with the minimal number of entries <= k
+function colmin_lt(m: NMatrix, s: Seq[Seq[Int]], k:Int) : Int
+  requires access_matrix_frac(m, 1/2)
+  requires asColRowSeqSeq(m) == s
+  ensures 0 <= result && result < dim(m) && forall col : Int :: 0 <= col && col < dim(m) && col != result ==> countLt(s[result],k) <= countLt(s[col],k)

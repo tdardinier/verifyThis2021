@@ -189,8 +189,6 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
 }
 
 // Predicates
-
-// ALEX: having a go at refactoring to pull out the null case (might need fewer lemmas?)
 predicate list(head: Ref) {
     head != null ==>
         acc(head.data) && acc(head.prev) && acc(head.next) && list(head.next)
