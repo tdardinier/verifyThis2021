@@ -141,26 +141,46 @@ method represent_by_row_rec(m: NMatrix, n: Int) returns (by_row: Seq[Multiset[In
   }
   else {
     by_row := Seq()
-        assume false
-
   }
 }
 
-
-
-// TO PROVE
 method represent_by_row(m: NMatrix) returns (by_row: Seq[Multiset[Int]])
   requires access_matrix_frac(m, 1/2)
   ensures |by_row| == dim(m)
   ensures access_matrix_frac(m, 1/2)
   ensures rep_matrix_by_row(m, by_row)
+{
+  by_row := represent_by_row_rec(m, dim(m))
+}
 
-// TO PROVE
+method represent_by_column_rec(m: NMatrix, n: Int) returns (by_column: Seq[Multiset[Int]])
+  requires access_matrix_frac(m, 1/2)
+  requires n >= 0
+  requires n <= dim(m)
+  ensures |by_column| == n
+  ensures access_matrix_frac(m, 1/2)
+  ensures forall i:Int :: { by_column[i] } i >= 0 && i < n ==> rep_column(m, i, by_column[i], 0)
+{
+  if (n > 0) {
+    var by_column_rec: Seq[Multiset[Int]]
+    by_column_rec := represent_by_column_rec(m, n - 1)
+    var s: Multiset[Int]
+    s := create_rep_by_column(m, n - 1, 0)
+    by_column := by_column_rec ++ Seq(s)
+  }
+  else {
+    by_column := Seq()
+  }
+}
+
 method represent_by_column(m: NMatrix) returns (by_column: Seq[Multiset[Int]])
   requires access_matrix_frac(m, 1/2)
   ensures |by_column| == dim(m)
   ensures access_matrix_frac(m, 1/2)
   ensures rep_matrix_by_column(m, by_column)
+{
+  by_column := represent_by_column_rec(m, dim(m))
+}
 
 function rep_matrix_by_row(m: NMatrix, s: Seq[Multiset[Int]]): Bool
   requires access_matrix_frac(m, 1/2)
