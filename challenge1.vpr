@@ -15,6 +15,199 @@ domain IArray {
   }
 }
 
+function firstDiff(s1:Seq[Int], s2:Seq[Int]) : Int
+  requires |s1| == |s2|
+  ensures 0 <= result && result <= |s1|
+  ensures forall i:Int :: {s1[i]}{s2[i]} 0 <= i && i < result ==> s1[i] == s2[i]
+  ensures result < |s1| ==> s1[result] != s2[result]
+  ensures result == |s1| ==> s1 == s2 // TODO alarming: Silicon accepts this with == swapped for != ...
+  //decreases |s1| // not available in IDE version :(
+{
+    (|s1| == 0 || s1[0] != s2[0]) ? 0 : firstDiff(s1[1..],s2[1..]) + 1 // TODO amazing - this just works :)
+}
+
+function lexicoLess(s1:Seq[Int], s2:Seq[Int]) : Bool
+  requires |s1| == |s2|
+{
+    firstDiff(s1,s2) < |s1| && s1[firstDiff(s1,s2)] < s2[firstDiff(s1,s2)]
+}
+
+method test(s1:Seq[Int], s2:Seq[Int], s3:Seq[Int])
+  requires |s1| == |s2| && |s2| == |s3|
+{
+  assert s1 != s2 ==> (lexicoLess(s1,s2) || lexicoLess(s2,s1))
+  assert lexicoLess(s1,s2) && lexicoLess(s2,s3) ==> lexicoLess(s1,s3) // TODO: WOW!
+}
+
+field val : Int // heap location per array slot per array
+
+define ARRAYPERMS(a) ARRAYPERMSFRAC(a,write)
+define ARRAYPERMSREAD(a) ARRAYPERMSFRAC(a, 1/2)
+define ARRAYPERMSFRAC(a,p) forall i: Int :: {slot(a,i).val} 0 <= i && i < len(a) ==> acc(slot(a,i).val, p)
+
+define A(i) slot(a,i).val
+
+function toSeq(a:IArray) : Seq[Int]
+  requires ARRAYPERMS(a)
+  ensures |result| == len(a) && forall i:Int :: {A(i)}{result[i]} 0 <= i && i < len(a) ==> A(i) == result[i]
+// TODO (maybe): could implement simply
+
+function isPerm(s1:Seq[Int], s2:Seq[Int]) : Bool
+  requires |s1| == |s2|
+
+method foo(a:IArray)
+  requires ARRAYPERMS(a)
+{
+    var k : Int 
+    var l : Int 
+    assume 0 <= k && k <= l && l < len(a) && A(k) > A(l)
+    var s : Seq[Int]
+    s := toSeq(a)
+    swap(a,k,l)
+    var t : Seq[Int]
+    t := toSeq(a)
+    assert lexicoLess(t,s)
+    assert permutation(t,s)
+}
+
+method swap(a:IArray, j:Int, k:Int)
+  requires 0 <= j && 0 <= k && j < len(a) && k < len(a)
+  requires ARRAYPERMS(a)
+  ensures  ARRAYPERMS(a)
+  ensures swapped(old(toSeq(a)),toSeq(a),j,k) // NOTE: this triggers the permutationation axioms
+  {
+      var tmp: Int := A(j)
+      A(j) := A(k)
+      A(k) := tmp
+  }
+
+
+domain permutationations {
+    function permutation(s1:Seq[Int], s2:Seq[Int]) : Bool
+    function swapped(s1:Seq[Int], s2:Seq[Int], i:Int, j:Int) : Bool
+    function one_transposition(s1:Seq[Int], s2:Seq[Int]) : Bool
+
+    axiom swaps {
+       forall s1:Seq[Int], s2:Seq[Int], i:Int, j:Int :: {swapped(s1,s2,i,j)}
+         |s1| == |s2| && 0 <= i && 0 <= j && i < |s1| && j < |s1| ==>
+           (swapped(s1,s2,i,j) ==> s1[i] == s2[j] && s1[j] == s2[i] && forall k:Int :: 0 <= k && k < |s1| && k!=i && k!=j ==> s1[k] == s2[k])
+           && (s1 == s2[i := s2[j]][j := s2[i]] ==> swapped(s1,s2,i,j))
+    } 
+
+    axiom one_swap {
+      forall s1:Seq[Int], s2:Seq[Int], i:Int, j:Int :: {swapped(s1,s2,i,j)}
+        swapped(s1,s2,i,j) ==> one_transposition(s1,s2)
+    }
+
+    axiom perm_eq {
+        forall s1:Seq[Int] :: permutation(s1,s1) // not sure this is really needed with the below
+    }
+
+    axiom perm_swap {
+        forall s1:Seq[Int], s2:Seq[Int] :: {one_transposition(s1,s2)} one_transposition(s1,s2) ==> permutation(s1,s2)
+    }
+
+    axiom one_more_swap {
+        forall s1:Seq[Int], s2:Seq[Int], s3:Seq[Int] :: {permutation(s1,s2),one_transposition(s2,s3)}  permutation(s1,s2) && one_transposition(s2,s3) ==> permutation(s1,s3)
+    }
+
+    axiom permutation_sym {
+        forall s1:Seq[Int], s2:Seq[Int] :: {permutation(s1,s2),permutation(s2,s1)} permutation(s1,s2) <==> permutation(s2,s1)
+    }
+}
+
+field deref : IArray // possibly-null reference to an array is modelled as a reference with this field
+
+method sort(a: IArray) // this code wasn't given, so assume it with a reasonable spec:
+  requires ARRAYPERMS(a)
+  ensures ARRAYPERMS(a)
+  ensures permutation(toSeq(a),old(toSeq(a))) && // and sorted:
+    forall i: Int, j:Int :: 0 <= i && i < j && j < len(a) ==> A(i) <= A(j) // A(i) is a shorthand macro encoding lookup at pos i of array a
+
+method permut(aptr: Ref) returns (res : Seq[Seq[Int]]) // result is a reserved name in Viper
+  requires aptr != null ==> acc(aptr.deref) && ARRAYPERMS(aptr.deref)
+{
+  res := Seq()
+  
+  if(aptr == null) {
+    // do nothing: (implicitly) return!
+  } else {
+    var a : IArray := aptr.deref // saves some repetition
+    
+    sort(a)
+
+    res := Seq(toSeq(a)) // no do-while in Viper, so unroll to a while loop:
+    // no method calls in loop conditions in Viper, so inline via a boolean 
+    var more : Bool
+    more := next(a)
+    while(more)
+      invariant ARRAYPERMS(a)
+    {
+        res := res ++ Seq(toSeq(a))
+    }
+    // no "return result": res is an out parameter, so its last-assigned value is implicitly returned
+  }
+}
+
+method next(a:IArray) returns (b:Bool)
+  requires ARRAYPERMS(a)
+  ensures ARRAYPERMS(a)
+  ensures b ==> permutation(old(toSeq(a)),toSeq(a)) && lexicoLess(old(toSeq(a)),toSeq(a)) // next is a permutation and lexicographically larger
+{
+  var i: Int := len(a) - 1;
+  
+  while(i > 0 && A(i-1) >= A(i)) 
+    invariant i < len(a) && (len(a) > 0 ==> i >= 0) // funny corner case as len(a) can be 0 so i might have always been negative..
+    invariant ARRAYPERMSREAD(a)
+    // array values increasing from i to the end:
+    invariant len(a) > 0 ==> forall k: Int, l: Int :: i <= k && k < l && l < len(a) ==> A(k) >= A(l)
+  {
+    i := i - 1;
+  }
+
+  if(i <= 0) {
+      b := false // implicitly: return false
+  } else { // if we don't return
+
+      var j : Int := len(a) - 1;
+      
+      while(A(j) <= A(j-1))
+        invariant ARRAYPERMSREAD(a)
+        invariant i <= j && j < len(a)
+        {
+          j := j - 1;
+        }
+
+      swap(a,i-1,j);
+
+      j := len(a) - 1;
+ 
+      // record the bounds of the array range we are reversing:
+      var oldi : Int := i 
+      var oldj : Int := j
+ 
+      label preloop // to refer back to in loop invariant:
+      while(i<j)
+        invariant ARRAYPERMS(a)
+        invariant oldi <= i && i <= j+1 && j <= oldj
+        invariant oldi + oldj == i + j
+        // swapped parts: [oldi..i) and (j..oldj]
+        invariant forall k:Int :: {A(k)} 0 <= k && k < len(a) && (oldi <= k && k < i || j < k && k <= oldj) ==> A(k) == old[preloop](A(oldi + oldj - k))
+        // unchanged regions:
+        invariant forall k:Int :: {A(k)} 0 <= k && k < len(a) && (k < oldi || k > oldj || i <= k && k <= j) ==> A(k) == old[preloop](A(k))
+        invariant permutation(old(toSeq(a)),toSeq(a))
+        {
+            swap(a,i,j)
+            i := i + 1
+            j := j - 1
+        }
+  }
+
+}
+
+
+
+/*
 function ind(a: Seq[Int], i: Int): Bool
 {
     i >= 0 && i < |a|
@@ -25,7 +218,7 @@ function unique_seq(a: Seq[Int]): Bool
     forall i:Int, j:Int :: { ind(a, i), ind(a, j) } ind(a, i) && ind(a, j) && i != j ==> a[i] != a[j]
 }
 
-function is_permut(a: Seq[Int], b: Set[Int]): Bool
+function is_permutation(a: Seq[Int], b: Set[Int]): Bool
 {
     |a| == |b| && unique_seq(a) && (forall i:Int :: { ind(a, i) } ind(a, i) ==> a[i] in b)
 }
@@ -80,7 +273,7 @@ method test()
     assert ind(a, 1)
     assert ind(a, 2)
 
-    assert is_permut(a, s)
+    assert is_permutation(a, s)
 
     assert smaller(a, b)
 
@@ -88,4 +281,4 @@ method test()
 
 
 
-}
+}*/
