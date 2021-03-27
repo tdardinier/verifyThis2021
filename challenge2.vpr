@@ -1,5 +1,9 @@
 import <decreases/predicate_instance.vpr>
 
+// All tasks completed
+// Silicon ~ 10s
+// Carbon ~ 50s
+
 // Fields
 
 // Ref is the type of nodes used for both list and tree, and has these fields:
@@ -66,8 +70,13 @@ method dll_to_bst(head: Ref) returns (root: Ref)
 {
     var n: Int
     var right: Ref
-    // n := size(head)
-    n := iterative_size(head) // Question 6
+    var b: Bool
+    if (b) {
+        n := size(head)
+    }
+    else {
+        n := iterative_size(head) // Question 6
+    }
 
     root, right := dll_to_bst_rec(head, n)
 }
@@ -83,20 +92,14 @@ method dll_to_bst_rec(head: Ref, n: Int) returns (root: Ref, right: Ref)
     ensures size_tree(root) == n
     ensures length(right) + n == old(length(head))
     ensures old(sorted_list(head)) ==> sorted_list(right) && is_bst(root)
-
     // The bst is smaller than the element on the right, that is right.data
     ensures old(sorted_list(head)) && right != null ==> unfolding list(right) in bst_smaller_than(root, right.data)
     // The bst is larger than the element on the left, that is head.data
     ensures old(sorted_list(head)) && head != null ==> bst_larger_than(root, old(unfolding list(head) in head.data))
-
     ensures old(sorted_list(head)) && right != null && head != null ==> (old(unfolding list(head) in head.data)) <= (unfolding list(right) in right.data)
-
     ensures head == null ==> root == null
     ensures n > 0 ==> root != null
-
-    ensures root != null ==> two_exponent(height(root) - 1) <= n
-    ensures n < two_exponent(height(root))
-
+    ensures root != null ==> two_exponent(height(root) - 1) <= n && n < two_exponent(height(root))
     ensures is_balanced(root)
 
     // decreases n
@@ -304,10 +307,7 @@ method lemma_bst_larger_than_change_bound(root: Ref, a: Int, b: Int)
 {
     if (root != null) {
         unfold acc(tree(root), 1/2)
-        assert root.data >= a
-        assert bst_larger_than(root.prev, a)
         lemma_bst_larger_than_change_bound(root.prev, a, b)
-        assert bst_larger_than(root.next, a)
         lemma_bst_larger_than_change_bound(root.next, a, b)
         fold acc(tree(root), 1/2)
     }
@@ -322,10 +322,7 @@ method lemma_bst_smaller_than_change_bound(root: Ref, a: Int, b: Int)
 {
     if (root != null) {
         unfold acc(tree(root), 1/2)
-        assert root.data <= a
-        assert bst_smaller_than(root.prev, a)
         lemma_bst_smaller_than_change_bound(root.prev, a, b)
-        assert bst_smaller_than(root.next, a)
         lemma_bst_smaller_than_change_bound(root.next, a, b)
         fold acc(tree(root), 1/2)
     }
