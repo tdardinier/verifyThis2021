@@ -23,7 +23,7 @@ function firstDiff(s1:Seq[Int], s2:Seq[Int]) : Int
   ensures forall i:Int :: {s1[i]}{s2[i]} 0 <= i && i < result ==> s1[i] == s2[i]
   ensures result < |s1| ==> s1[result] != s2[result]
   ensures result == |s1| ==> s1 == s2 
-{}
+{
     (|s1| == 0 || s1[0] != s2[0]) ? 0 : firstDiff(s1[1..],s2[1..]) + 1
 }
 

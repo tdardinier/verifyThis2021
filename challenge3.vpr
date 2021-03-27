@@ -30,7 +30,118 @@ domain NMatrix {
 
 }
 
+// CODE
+
 field val: Int // heap location per slot per matrix
+
+method sort_row(m: NMatrix, row: Int, ascending: Bool, rep: Multiset[Int])
+  requires access_row(m, row)
+  requires row >= 0 && row < dim(m)
+  requires rep_row(m, row, rep, 0)
+  ensures access_row(m, row)
+  ensures rep_row(m, row, rep, 0)
+
+
+method sort_column(m: NMatrix, column: Int, rep: Multiset[Int])
+  requires access_column(m, column)
+  requires column >= 0 && column < dim(m)
+  requires rep_column(m, column, rep, 0)
+  ensures access_column(m, column)
+  ensures rep_column(m, column, rep, 0)
+
+method shearsort(n: Int, m: NMatrix, initial_by_row: Seq[Multiset[Int]]) returns (all: Multiset[Int])
+  requires access_matrix(m)
+  requires dim(m) == n
+  requires rep_matrix_by_row(m, initial_by_row)
+  ensures access_matrix(m)
+  ensures union_seq_multi(initial_by_row) == all
+{
+  var k: Int // uninitialised - represents an "arbitrary bound" with respect to sorting properties proven
+  var p: Int := 0
+
+  var by_row: Seq[Multiset[Int]]
+  var by_column: Seq[Multiset[Int]]
+  by_row, by_column, all := represent(m)
+
+  lemma_by_row_unique(m, by_row, initial_by_row, 0, 1/2)
+
+  var rowsLessThanK : Int := 0
+  var rowsGtK : Int := dim(m)
+
+  // i < ceil(log2(n)) + 1
+  // <=> i < log2(n) + 1
+  // <=> i - 1 < log2(n)
+  // <=> 2^(i - 1) < n
+  // <=> two_exponent(i - 1) < n
+  // <=> two_exponent(i) < 2*n // avoids evaluating for 
+  while (two_exponent(p) < 2*n)
+    invariant p >= 0
+    invariant access_matrix(m)
+    invariant rep_matrix_by_row(m, by_row)
+    invariant rep_matrix_by_column(m, by_column)
+    invariant union_seq_multi(by_row) == all
+    invariant union_seq_multi(by_column) == all
+    decreases 2*n - two_exponent(p) // task 1: Termination (memory safety is implicit with permissions)
+    //invariant forall r: Int :: 0 <= r && r < rowsLessThanK ==> // all values are <= k
+    //invariant forall r: Int :: rowsGtK <= r && r < dim(m) ==> // all values are >= k
+  {
+
+    // First inner parallel loop
+    // Corresponds to forking n threads (per tid instance): the exhales model transfer of heap ownership && value info per thread
+    exhale forall tid:Int :: { by_row[tid] } tid >= 0 && tid < n ==> P1(m, tid, by_row)
+    // The corresponding loop body is checked in a separate Viper "method" first_inner_loop below
+    // Corresponds to joining n threads (per tid instance): the inhales model transfer of heap ownership && value info per thread
+    inhale forall tid:Int :: { by_row[tid] } tid >= 0 && tid < n ==> Q1(m, tid, by_row)
+    
+
+    by_column := represent_by_column(m)
+    assert rep_matrix_by_column(m, by_column)
+
+    lemma_same_union(m, by_row, by_column)
+
+    assert rep_matrix_by_column(m, by_column)
+
+    // counting rows idea:
+    //var asColRow : Seq[Seq[Int]] := asColRowSeqSeq(m)
+    //var fewestLtK : Int := colmin_lt(m,asColRow,k)
+    //var fewestGtK : Int := colmin_gt(m,asColRow,k)
+    // (fewestGtk - fewestLtK) * 2 <=  rowsGtK - rowsLessThanK
+
+    // Second inner parallel loop
+    exhale forall tid:Int :: { by_column[tid] } tid >= 0 && tid < n ==> P2(m, tid, by_column)
+    inhale forall tid:Int :: { by_column[tid] } tid >= 0 && tid < n ==> Q2(m, tid, by_column)
+
+    by_row := represent_by_row(m)
+    lemma_same_union(m, by_row, by_column)
+
+
+    p := p + 1
+  }
+}
+
+// Parallel loops
+
+define P1(m, tid, by_row) access_row(m, tid) &&tid >= 0 && tid < dim(m) && |by_row| == dim(m) && rep_row(m, tid, by_row[tid], 0)
+define Q1(m, tid, by_row) access_row(m, tid) && rep_row(m, tid, by_row[tid], 0)
+
+method first_inner_loop(m: NMatrix, tid: Int, by_row: Seq[Multiset[Int]])
+  requires P1(m, tid, by_row)
+  ensures Q1(m, tid, by_row)
+{
+  sort_row(m, tid, tid % 2 == 0, by_row[tid])
+}
+
+define P2(m, tid, by_row) access_column(m, tid) && tid >= 0 && tid < dim(m) && |by_column| == dim(m) && rep_column(m, tid, by_column[tid], 0)
+define Q2(m, tid, by_row) access_column(m, tid) && rep_column(m, tid, by_column[tid], 0)
+
+method second_inner_loop(m: NMatrix, tid: Int, by_column: Seq[Multiset[Int]])
+  requires P2(m, tid, by_column)
+  ensures Q2(m, tid, by_column)
+{
+  sort_column(m, tid, by_column[tid])
+}
+
+// Specifications
 
 define M(i, j) slot(m,i,j).val // maybe use this in code?
 
@@ -196,13 +307,14 @@ method lemma_rep_column_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multis
 }
 
 
-method lemma_rep_row_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multiset[Int], i: Int)
+method lemma_rep_row_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multiset[Int], i: Int, p: Perm)
+  requires p > none
   requires c >= 0 && c < dim(m)
-  requires access_row_frac(m, c, 1/5)
+  requires access_row_frac(m, c, p)
   requires i >= 0 && i <= dim(m)
   requires rep_row(m, c, r1, i)
   requires rep_row(m, c, r2, i)
-  ensures access_row_frac(m, c, 1/5)
+  ensures access_row_frac(m, c, p)
   ensures r1 == r2
 {
   if (i < dim(m)) {
@@ -210,9 +322,30 @@ method lemma_rep_row_unique(m: NMatrix, c: Int, r1: Multiset[Int], r2: Multiset[
     var b: Multiset[Int] := r2 setminus Multiset( M(c, i) )
     assert r1 == Multiset(M(c, i)) union a
     assert r2 == Multiset(M(c, i)) union b
-    lemma_rep_row_unique(m, c, a, b , i + 1)
+    lemma_rep_row_unique(m, c, a, b , i + 1, p)
   }
 }
+
+method lemma_by_row_unique(m: NMatrix, by_row_1: Seq[Multiset[Int]], by_row_2: Seq[Multiset[Int]], n: Int, p: Perm)
+  requires p > none
+  requires access_matrix_frac(m, p)
+  requires n >= 0 && n <= dim(m)
+
+  requires dim(m) == |by_row_1| + n
+  requires dim(m) == |by_row_2| + n
+
+  requires forall i:Int :: { by_row_1[i] } i >= 0 && i < |by_row_1| ==> rep_row(m, i + n, by_row_1[i], 0)
+  requires forall i:Int :: { by_row_2[i] } i >= 0 && i < |by_row_2| ==> rep_row(m, i + n, by_row_2[i], 0)
+
+  ensures access_matrix_frac(m, p)
+  ensures by_row_1 == by_row_2
+{
+  if (n < dim(m)) {
+    lemma_by_row_unique(m, by_row_1[1..], by_row_2[1..], n + 1, p / 2)
+    lemma_rep_row_unique(m, n, by_row_1[0], by_row_2[0], 0, p / 2)
+  }
+}
+
 
 function rep_row(m: NMatrix, row: Int, s: Multiset[Int], j: Int): Bool
   requires access_row_frac(m, row, wildcard)
@@ -259,7 +392,7 @@ method lemma_rep_submatrix_row_rec(m: NMatrix, by_row: Seq[Multiset[Int]], n: In
     assert r1 == Multiset(M(dim(m) - 1, dim(m) - 1))
     assert rep_row(m, dim(m) - 1, by_row[n], 0)
     assert by_row[n..] == Seq(by_row[n])
-    lemma_rep_row_unique(m, dim(m) - 1, by_row[n], r3, 0)
+    lemma_rep_row_unique(m, dim(m) - 1, by_row[n], r3, 0, 2/7)
     assert union_seq_multi(by_row[n..]) == r3
     assert union_seq_multi(by_row_big[n..]) union r1 union r3 setminus r2 == Multiset() union Multiset(M(dim(m) - 1, dim(m) - 1)) union union_seq_multi(by_row[n..]) setminus Multiset(M(dim(m) - 1, dim(m) - 1))
   }
@@ -271,7 +404,6 @@ method lemma_rep_submatrix_row_rec(m: NMatrix, by_row: Seq[Multiset[Int]], n: In
   }
 }
 
-// Some facts are admitted at the end of the proof of this lemma
 method lemma_rep_submatrix_column_rec(m: NMatrix, by_column: Seq[Multiset[Int]], n: Int, by_column_big: Seq[Multiset[Int]], r1: Multiset[Int], r2: Multiset[Int], r3: Multiset[Int], p: Perm)
   requires p > none
   requires access_matrix_frac(m, p)
@@ -303,7 +435,6 @@ method lemma_rep_submatrix_column_rec(m: NMatrix, by_column: Seq[Multiset[Int]],
     assert rep_row(m, dim(m) - 1, r1, n)
     assert rep_row(m, dim(m) - 1, new_r1, n + 1) 
     assert rep_row(m, dim(m) - 1, r1, n)
-
     lemma_rep_submatrix_column_rec(m, by_column, n + 1, by_column_big, new_r1, r2, r3, p / 2)
   }
 }
@@ -379,7 +510,7 @@ method lemma_same_union(m: NMatrix, by_row: Seq[Multiset[Int]], by_column: Seq[M
     lemma_same_union(a, by_row_big, by_column_big)
 
 
-    lemma_rep_row_unique(m, n - 1, row_r3, column_r3, 0)
+    lemma_rep_row_unique(m, n - 1, row_r3, column_r3, 0, 1/3)
     lemma_rep_column_unique(m, n - 1, row_r1, column_r1, 0, 1/3)
   }
 }
@@ -398,115 +529,6 @@ method represent(m: NMatrix) returns (by_row: Seq[Multiset[Int]], by_column: Seq
   all := union_seq_multi(by_row)
   lemma_same_union(m, by_row, by_column)
 }
-
-// CODE
-
-method sort_row(m: NMatrix, row: Int, ascending: Bool, rep: Multiset[Int])
-  requires access_row(m, row)
-  requires row >= 0 && row < dim(m)
-  requires rep_row(m, row, rep, 0)
-  ensures access_row(m, row)
-  ensures rep_row(m, row, rep, 0)
-
-
-method sort_column(m: NMatrix, column: Int, rep: Multiset[Int])
-  requires access_column(m, column)
-  requires column >= 0 && column < dim(m)
-  requires rep_column(m, column, rep, 0)
-  ensures access_column(m, column)
-  ensures rep_column(m, column, rep, 0)
-
-method shearsort(n: Int, m: NMatrix)
-  requires access_matrix(m)
-  requires dim(m) == n
-  ensures access_matrix(m)
-{
-  var k: Int // uninitialised - represents an "arbitrary bound" with respect to sorting properties proven
-  var p: Int := 0
-
-  var by_row: Seq[Multiset[Int]]
-  var by_column: Seq[Multiset[Int]]
-  var all: Multiset[Int]
-  by_row, by_column, all := represent(m)
-
-  var rowsLessThanK : Int := 0
-  var rowsGtK : Int := dim(m)
-
-  // i < ceil(log2(n)) + 1
-  // <=> i < log2(n) + 1
-  // <=> i - 1 < log2(n)
-  // <=> 2^(i - 1) < n
-  // <=> two_exponent(i - 1) < n
-  // <=> two_exponent(i) < 2*n // avoids evaluating for 
-  while (two_exponent(p) < 2*n)
-    invariant p >= 0
-    invariant access_matrix(m)
-    invariant rep_matrix_by_row(m, by_row)
-    invariant rep_matrix_by_column(m, by_column)
-    invariant union_seq_multi(by_row) == all
-    invariant union_seq_multi(by_column) == all
-    decreases 2*n - two_exponent(p) // task 1: Termination (memory safety is implicit with permissions)
-    //invariant forall r: Int :: 0 <= r && r < rowsLessThanK ==> // all values are <= k
-    //invariant forall r: Int :: rowsGtK <= r && r < dim(m) ==> // all values are >= k
-  {
-
-    // First inner parallel loop
-    // Corresponds to forking n threads (per tid instance): the exhales model transfer of heap ownership && value info per thread
-    exhale forall tid:Int :: { by_row[tid] } tid >= 0 && tid < n ==> P1(m, tid, by_row)
-    // The corresponding loop body is checked in a separate Viper "method" first_inner_loop below
-    // Corresponds to joining n threads (per tid instance): the inhales model transfer of heap ownership && value info per thread
-    inhale forall tid:Int :: { by_row[tid] } tid >= 0 && tid < n ==> Q1(m, tid, by_row)
-    
-
-    by_column := represent_by_column(m)
-    assert rep_matrix_by_column(m, by_column)
-
-    lemma_same_union(m, by_row, by_column)
-
-    assert rep_matrix_by_column(m, by_column)
-
-    // counting rows idea:
-    //var asColRow : Seq[Seq[Int]] := asColRowSeqSeq(m)
-    //var fewestLtK : Int := colmin_lt(m,asColRow,k)
-    //var fewestGtK : Int := colmin_gt(m,asColRow,k)
-    // (fewestGtk - fewestLtK) * 2 <=  rowsGtK - rowsLessThanK
-
-    // Second inner parallel loop
-    exhale forall tid:Int :: { by_column[tid] } tid >= 0 && tid < n ==> P2(m, tid, by_column)
-    inhale forall tid:Int :: { by_column[tid] } tid >= 0 && tid < n ==> Q2(m, tid, by_column)
-
-    by_row := represent_by_row(m)
-    lemma_same_union(m, by_row, by_column)
-
-
-    p := p + 1
-  }
-}
-
-
-// Parallel loops
-
-define P1(m, tid, by_row) access_row(m, tid) &&tid >= 0 && tid < dim(m) && |by_row| == dim(m) && rep_row(m, tid, by_row[tid], 0)
-define Q1(m, tid, by_row) access_row(m, tid) && rep_row(m, tid, by_row[tid], 0)
-
-method first_inner_loop(m: NMatrix, tid: Int, by_row: Seq[Multiset[Int]])
-  requires P1(m, tid, by_row)
-  ensures Q1(m, tid, by_row)
-{
-  sort_row(m, tid, tid % 2 == 0, by_row[tid])
-}
-
-define P2(m, tid, by_row) access_column(m, tid) && tid >= 0 && tid < dim(m) && |by_column| == dim(m) && rep_column(m, tid, by_column[tid], 0)
-define Q2(m, tid, by_row) access_column(m, tid) && rep_column(m, tid, by_column[tid], 0)
-
-method second_inner_loop(m: NMatrix, tid: Int, by_column: Seq[Multiset[Int]])
-  requires P2(m, tid, by_column)
-  ensures Q2(m, tid, by_column)
-{
-  sort_column(m, tid, by_column[tid])
-}
-
-
 
 function asRowColSeqSeq(m: NMatrix) : Seq[Seq[Int]]
     requires access_matrix_frac(m, 1/2)
