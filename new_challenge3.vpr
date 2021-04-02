@@ -1,0 +1,618 @@
+import <decreases/int.vpr>
+
+// Tasks completed: 1 and 2
+
+// Carbon ~ 12 s
+// Silicon fails to verify it
+
+// nxn matrix on heap
+
+domain NMatrix {
+  function slot(a: NMatrix, i: Int, j:Int): Ref
+  function dim(a: NMatrix): Int
+  function parent(r: Ref): NMatrix
+  function Icoord(r: Ref): Int
+  function Jcoord(r: Ref): Int
+
+  axiom all_diff { // slot(m,i,j) is injective in all parameters
+    forall m: NMatrix, i: Int, j:Int :: { slot(m,i,j) }
+      parent(slot(m,i,j)) == m && Icoord(slot(m,i,j)) == i && Jcoord(slot(m,i,j)) == j 
+  }
+
+  axiom dim_nonneg {
+    forall a: NMatrix :: { dim(a) }
+      dim(a) >= 0
+  }
+
+  function tl_submatrix(a: NMatrix): NMatrix
+
+  axiom tl_submatrix_def {
+    forall a:NMatrix :: { tl_submatrix(a) } dim(a) >= 1 ==>
+      dim(tl_submatrix(a)) == dim(a) - 1 &&
+        forall i:Int, j:Int :: { slot(a, i, j) } {slot(tl_submatrix(a), i, j)} i >= 0 && i < dim(a) - 1 && j >= 0 && j < dim(a) - 1
+        ==> slot(tl_submatrix(a), i, j) == slot(a, i, j)
+  }
+
+}
+
+// CODE
+
+field val: Int // heap location per slot per matrix
+
+method sort_row(m: NMatrix, row: Int, ascending: Bool)
+  requires access_row(m, row)
+  requires row >= 0 && row < dim(m)
+  ensures access_row(m, row)
+  ensures repRow(m, row, 0) == old(repRow(m, row, 0))
+  //TODO: ensures rowSorted(m, row, even(row))
+
+method sort_column(m: NMatrix, column: Int)
+  requires access_column(m, column)
+  requires column >= 0 && column < dim(m)
+  ensures access_column(m, column)
+  ensures repCol(m, 0, column) == old(repCol(m, 0, column))
+
+method shearsort(n: Int, m: NMatrix)
+  requires access_matrix(m)
+  requires dim(m) == n
+  ensures access_matrix(m)
+  ensures repByRows(m, 0, 0) == old(repByRows(m, 0, 0)) // Permutation
+{
+
+  helper_lemma(m, 0, 1/2)
+
+  assert old(repByRows(m, 0, 0)) == old(repByCols(m, 0, 0))
+
+
+  var k: Int // uninitialised - represents an "arbitrary bound" with respect to sorting properties proven
+  var p: Int := 0
+
+  // i < ceil(log2(n)) + 1
+  // <=> i < log2(n) + 1
+  // <=> i - 1 < log2(n)
+  // <=> 2^(i - 1) < n
+  // <=> two_exponent(i - 1) < n
+  // <=> two_exponent(i) < 2*n // avoids evaluating for 
+  while (two_exponent(p) < 2*n)
+    invariant p >= 0
+    invariant access_matrix(m)
+    invariant repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
+    invariant repByCols(m, 0, 0) == old(repByCols(m, 0, 0))
+
+    decreases 2*n - two_exponent(p) // task 1: Termination (memory safety is implicit with permissions)
+    //invariant forall r: Int :: 0 <= r && r < rowsLessThanK ==> // all values are <= k
+    //invariant forall r: Int :: rowsGtK <= r && r < dim(m) ==> // all values are >= k
+  {
+
+    label before1
+
+    // First inner parallel loop
+    // Corresponds to forking n threads (per tid instance): the exhales model transfer of heap ownership && value info per thread
+    exhale forall tid:Int :: { repRow(m, tid, 0) } tid >= 0 && tid < n ==> P1(m, tid)
+    // The corresponding loop body is checked in a separate Viper "method" first_inner_loop below
+    // Corresponds to joining n threads (per tid instance): the inhales model transfer of heap ownership && value info per thread
+    inhale forall tid:Int :: { repRow(m, tid, 0) } {even(tid)} tid >= 0 && tid < n ==> Q1(m, tid, before1)
+
+    // Sorted by rows
+    assert sortedRows(m)
+
+
+    // Ghost proof
+    var j: Int := n
+    while (j > 0)
+        invariant sortedRows(m)
+        invariant acc(access_matrix(m), 1/2)
+        invariant j >= 0 && j <= dim(m)
+        invariant repByRows(m, j, 0) == old[before1](repByRows(m, j, 0))
+        invariant forall i:Int :: { repRow(m, i, 0) } i >= 0 && i < dim(m) ==> repRow(m, i, 0) == old[before1](repRow(m, i, 0))
+    {
+        j := j - 1
+    }
+
+    var n_min_zeros: Int
+    var n_min_ones: Int
+    n_min_zeros, n_min_ones := proofPart1(m, k, 1 / 4)
+
+    assert n_min_zeros + n_min_ones >= (dim(m) - 1) / 2
+    assert forall col:Int :: { numbersOfElemsCol(m, col, k, 0, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 0, dim(m) - 1) >= n_min_zeros
+    assert forall col:Int :: { numbersOfElemsCol(m, col, k, 1, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 1, dim(m) - 1) >= n_min_ones
+
+
+    /*
+    requires p > none
+    requires acc(access_matrix(m), p)
+    requires sortedRows(m)
+    
+    ensures acc(access_matrix(m), p)
+    
+    ensures n_min_zeros + n_min_ones >= (dim(m) - 1) / 2
+    ensures forall col:Int :: { numbersOfElemsCol(m, col, k, 0, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 0, dim(m) - 1) >= n_min_zeros
+    ensures forall col:Int :: { numbersOfElemsCol(m, col, k, 1, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 1, dim(m) - 1) >= n_min_ones
+*/
+    
+    // counting rows idea:
+    //var asColRow : Seq[Seq[Int]] := asColRowSeqSeq(m)
+    //var fewestLtK : Int := colmin_lt(m,asColRow,k)
+    //var fewestGtK : Int := colmin_gt(m,asColRow,k)
+    // (fewestGtk - fewestLtK) * 2 <=  rowsGtK - rowsLessThanK
+
+    assert repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
+    helper_lemma(m, 0, 1/2)
+    assert repByCols(m, 0, 0) == old(repByCols(m, 0, 0))
+
+    label before2
+
+    // Second inner parallel loop
+    exhale forall tid:Int :: { repCol(m, 0, tid) } tid >= 0 && tid < n ==> P2(m, tid)
+    inhale forall tid:Int :: { repCol(m, 0, tid) } tid >= 0 && tid < n ==> Q2(m, tid, before2)
+
+    // Ghost proof
+    j := n
+    while (j > 0)
+        invariant acc(access_matrix(m), 1/2)
+        invariant j >= 0 && j <= dim(m)
+        invariant repByCols(m, 0, j) == old[before2](repByCols(m, 0, j))
+        invariant forall i:Int :: { repCol(m, 0, i) } i >= 0 && i < dim(m) ==> repCol(m, 0, i) == old[before2](repCol(m, 0, i))
+    {
+        j := j - 1
+    }
+
+    helper_lemma(m, 0, 1/2)
+
+
+    p := p + 1
+  }
+}
+
+method allocMatrix(d:Int) returns (m: NMatrix)
+  requires d >= 0
+  ensures dim(m) == d
+  ensures access_matrix(m)
+
+function two_exponent(n: Int): Int
+    ensures n >= 0 ==> result >= 1
+    ensures n > 0 ==> result == 2 * two_exponent(n-1)
+    ensures n < 0 ==> result == 0
+{
+    n > 0 ? 2 * two_exponent(n - 1) : (n == 0 ? 1 : 0)
+}
+
+// Parallel loops
+
+define P1(m, tid) access_row(m, tid) && tid >= 0 && tid < dim(m)
+define Q1(m, tid, lab) access_row(m, tid) && repRow(m, tid, 0) == old[lab](repRow(m, tid, 0)) && rowSorted(m, tid, even(tid))
+
+method first_inner_loop(m: NMatrix, tid: Int)
+  requires P1(m, tid)
+  ensures access_row(m, tid) && repRow(m, tid, 0) == old(repRow(m, tid, 0)) && rowSorted(m, tid, even(tid))
+{
+  sort_row(m, tid, even(tid))
+}
+
+define P2(m, tid) access_column(m, tid) && tid >= 0 && tid < dim(m)
+define Q2(m, tid, lab) access_column(m, tid) && repCol(m, 0, tid) == old[lab](repCol(m, 0, tid))
+
+method second_inner_loop(m: NMatrix, tid: Int)
+  requires P2(m, tid)
+  ensures access_column(m, tid) && repCol(m, 0, tid) == old(repCol(m, 0, tid))
+{
+  sort_column(m, tid)
+}
+
+// Specifications
+
+define M(i, j) slot(m,i,j).val // maybe use this in code?
+
+predicate access_matrix(m: NMatrix) {
+    forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < dim(m) && j < dim(m) ==> acc(slot(m,i,j).val)
+}
+
+predicate access_row(m: NMatrix, row: Int) {
+    forall j:Int :: {slot(m, row,j)} 0 <= j && j < dim(m) ==> acc(slot(m,row,j).val)
+}
+
+predicate access_column(m: NMatrix, col: Int) {
+    forall i:Int :: {slot(m,i,col)} 0 <= i && i < dim(m) ==> acc(slot(m,i,col).val)
+}
+
+function repRow(m: NMatrix, row: Int, fromCol: Int): Multiset[Int]
+    requires forall j:Int :: {slot(m, row, j)} fromCol <= j && j < dim(m) ==> acc(slot(m, row, j).val, wildcard)
+    requires fromCol >= 0 && fromCol <= dim(m)
+    requires row >= 0 && row < dim(m)
+{
+    fromCol < dim(m) ? Multiset(M(row, fromCol)) union repRow(m, row, fromCol + 1) : Multiset()
+}
+
+function repByRows(m: NMatrix, fromRow: Int, fromCol: Int): Multiset[Int]
+    requires forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, wildcard)
+    requires fromCol >= 0 && fromCol <= dim(m)
+    requires fromRow >= 0 && fromRow <= dim(m)
+{
+    fromRow < dim(m) ? repRow(m, fromRow, fromCol) union repByRows(m, fromRow + 1, fromCol) : Multiset()
+}
+
+function repCol(m: NMatrix, fromRow: Int, col: Int): Multiset[Int]
+    requires forall i:Int :: {slot(m, i, col)} fromRow <= i && i < dim(m) ==> acc(slot(m, i, col).val, wildcard)
+    requires fromRow >= 0 && fromRow <= dim(m)
+    requires col >= 0 && col < dim(m)
+{
+    fromRow < dim(m) ? Multiset(M(fromRow, col)) union repCol(m, fromRow + 1, col) : Multiset()
+}
+
+function repByCols(m: NMatrix, fromRow: Int, fromCol: Int): Multiset[Int]
+    requires forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, wildcard)
+    requires fromCol >= 0 && fromCol <= dim(m)
+    requires fromRow >= 0 && fromRow <= dim(m)
+    ensures fromRow == dim(m) ==> result == Multiset()
+{
+    fromCol < dim(m) ? repCol(m, fromRow, fromCol) union repByCols(m, fromRow, fromCol + 1) : Multiset()
+}
+
+method helper_lemma(m: NMatrix, fromRow: Int, p: Perm)
+    requires p > none
+    requires forall i: Int, j:Int :: {slot(m, i, j)} 0 <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
+    requires fromRow >= 0 && fromRow <= dim(m)
+    ensures forall i: Int, j:Int :: {slot(m, i, j)} 0 <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
+    ensures repByCols(m, fromRow, 0) == repByRows(m, fromRow, 0)
+{
+    if (fromRow < dim(m)) {
+        helper_lemma(m, fromRow + 1, p / 2)
+        helper_lemma2(m, fromRow, 0, p / 2)
+    }
+}
+
+method helper_lemma2(m: NMatrix, fromRow: Int, fromCol: Int, p: Perm)
+    requires p > none
+    requires forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
+    requires fromRow >= 0 && fromRow < dim(m)
+    requires fromCol >= 0 && fromCol <= dim(m)
+    ensures forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
+    ensures repByCols(m, fromRow, fromCol) == repRow(m, fromRow, fromCol) union repByCols(m, fromRow + 1, fromCol)
+{
+    if (fromCol < dim(m)) {
+        helper_lemma2(m, fromRow, fromCol + 1, p / 2)
+    }
+}
+
+// Second part: Sortedness
+/*
+
+function asRowColSeqSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires acc(access_matrix(m), wildcard)
+    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row < dim(m) ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+// easy to implement if needed
+
+function asColRowSeqSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires acc(access_matrix(m), wildcard)
+    ensures |result| == dim(m) && (forall col:Int , row: Int :: {result[col][row]}{M(row,col)} 0 <= col && col < dim(m) ==> 
+      |result[col]| == dim(m) && (0 <= row && row < dim(m) ==> result[col][row] == M(row,col)))
+// easy to implement if needed
+
+function rowSorted(m: NMatrix, row: Int, ascending: Bool): Bool
+    requires row >= 0 && row < dim(m)
+    requires acc(access_row(m, row), wildcard)
+{
+    forall i:Int, j:Int :: { M(row, i), M(row, j) } 0 <= i && i < j && j < dim(m) ==> (ascending ? M(row, i) <= M(row, j) : M(row, j) <= M(row, i))
+}
+
+function even(i: Int): Bool
+{
+    i % 2 == 0
+}
+
+function sortedRows(m: NMatrix): Bool
+    requires acc(access_matrix(m), wildcard)
+{
+    forall i:Int :: { even(i) } 0 <= i && i < dim(m) ==> rowSorted(m, i, even(i))
+}
+
+function bin(x: Int, k: Int): Int
+    ensures result == 0 <==> x <= k
+    ensures result == 1 <==> x > k
+
+// TODO: Implement
+method rowSortedExistsIndex(m: NMatrix, row: Int, k: Int, ascending: Bool, from: Int, p: Perm) returns (index: Int)
+    requires p > none
+    requires row >= 0 && row < dim(m)
+    requires acc(access_row(m, row), p)
+    requires from >= 0 && from < dim(m)
+
+    ensures acc(access_row(m, row), p)
+    ensures index >= 0 && index <= dim(m)
+    ensures forall i:Int :: { M(row, i) } i >= 0 && i < dim(m) && i < index ==> (ascending ? bin(M(row, i), k) == 0 : bin(M(row, i), k) == 1)
+    ensures forall i:Int :: { M(row, i) } i >= 0 && i < dim(m) && i >= index ==> (ascending ? bin(M(row, i), k) == 1 : bin(M(row, i), k) == 0)
+{
+    if (from < dim(m)) {
+        assume false
+    }
+}
+
+method combineTwoRowsAux(m: NMatrix, r1: Int, r2: Int, k: Int, i1: Int, i2: Int, b: Int, from: Int, p: Perm)
+    requires p > none
+    requires acc(access_row(m, r1), p)
+    requires acc(access_row(m, r2), p)
+    requires r1 >= 0 && r1 < dim(m)
+    requires r2 >= 0 && r2 < dim(m)
+    requires rowSorted(m, r1, true)
+    requires rowSorted(m, r2, false)
+    requires from >= 0 && from <= dim(m)
+
+    requires forall i:Int :: { M(r1, i) } i >= 0 && i < dim(m) && i < i1 ==> bin(M(r1, i), k) == 0
+    requires forall i:Int :: { M(r1, i) } i >= 0 && i < dim(m) && i >= i1 ==> bin(M(r1, i), k) == 1
+
+    requires forall i:Int :: { M(r2, i) } i >= 0 && i < dim(m) && i < i2 ==> bin(M(r2, i), k) == 1
+    requires forall i:Int :: { M(r2, i) } i >= 0 && i < dim(m) && i >= i2 ==> bin(M(r2, i), k) == 0
+
+    requires b == 0 <==> i1 >= i2
+    requires b == 1 <==> i1 < i2
+
+
+
+    ensures acc(access_row(m, r1), p)
+    ensures acc(access_row(m, r2), p)
+    ensures forall i:Int :: { M(r1, i) } { M(r2, i) }  i >= from && i < dim(m) ==> (bin(M(r1, i), k) == b || bin(M(r2, i), k) == b)
+{
+    if (from < dim(m)) {
+        combineTwoRowsAux(m, r1, r2, k, i1, i2, b, from + 1, p / 2)
+    }
+}
+
+method combineTwoRows(m: NMatrix, r1: Int, r2: Int, k: Int, p: Perm) returns (b: Int)
+    requires p > none
+    requires acc(access_row(m, r1), p)
+    requires acc(access_row(m, r2), p)
+    requires r1 >= 0 && r1 < dim(m)
+    requires r2 >= 0 && r2 < dim(m)
+    requires rowSorted(m, r1, true)
+    requires rowSorted(m, r2, false)
+
+    ensures acc(access_row(m, r1), p)
+    ensures acc(access_row(m, r2), p)
+
+    ensures forall i:Int :: { M(r1, i) } { M(r2, i) }  i >= 0 && i < dim(m) ==> (bin(M(r1, i), k) == b || bin(M(r2, i), k) == b)
+{
+    var i1: Int
+    i1 := rowSortedExistsIndex(m, r1, k, true, 0, p / 2)
+    var i2: Int
+    i2 := rowSortedExistsIndex(m, r2, k, false, 0, p / 2)
+
+    if (i1 >= i2) {
+        b := 0
+    }
+    else {
+        b := 1
+    }
+
+    combineTwoRowsAux(m, r1, r2, k, i1, i2, b, 0, p / 2)
+
+}
+
+function numberOfElemsMulti(r: Multiset[Int], k: Int, b: Int): Int
+    ensures |r| == 0 ==> result == 0
+    //ensures forall ra:Multiset[Int], rb:Multiset[Int] :: { ra union rb } r == ra union rb ==> result == numberOfElemsMulti(ra, k, b) + numberOfElemsMulti(rb, k, b)
+    ensures forall x:Int :: { x in r } (x in r) >= 1 ==> result == b2i(bin(x, k) == b) + numberOfElemsMulti(r setminus Multiset(x), k, b)
+
+// Returns the set of rows in which at the column col we have a b for bin(k, b)
+function numbersOfElemsCol(m: NMatrix, col: Int, k: Int, b: Int, toRow: Int): Int
+    requires acc(access_column(m, col), wildcard)
+    requires toRow >= -1 && toRow < dim(m)
+    ensures toRow >= 0 ==> result >= numbersOfElemsCol(m, col, k, b, toRow - 1)
+{
+    toRow == -1 ? 0 : (b2i(bin(M(toRow, col), k) == b) + numbersOfElemsCol(m, col, k, b, toRow - 1))
+}
+
+// toRow excluded
+function repColInv(m: NMatrix, toRow: Int, col: Int): Multiset[Int]
+    requires acc(access_column(m, col), wildcard)
+    requires toRow >= 0 && toRow <= dim(m)
+    requires col >= 0 && col < dim(m)
+
+    ensures toRow > 0 ==> (M(toRow - 1, col) in result) >= 1
+    ensures result == repCol(m, 0, col) setminus repCol(m, toRow, col)
+    ensures repCol(m, 0, col) == result union repCol(m, toRow, col)
+{
+    toRow == 0 ? Multiset() : Multiset(M(toRow - 1, col)) union repColInv(m, toRow - 1, col)
+}
+
+
+method lemma_two_functions_same_aux(m: NMatrix, col: Int, k: Int, b: Int, toRow: Int, p: Perm)
+    requires p > none
+    requires acc(access_column(m, col), p)
+    requires toRow >= -1 && toRow < dim(m)
+    requires col >= 0 && col < dim(m)
+
+    
+    ensures acc(access_column(m, col), p)
+    ensures numbersOfElemsCol(m, col, k, b, toRow) == numberOfElemsMulti(repColInv(m, toRow + 1, col), k, b)
+    // repRow(m: NMatrix, row: Int, fromCol: Int): Multiset[Int]
+{
+    if (toRow >= 0) {
+        lemma_two_functions_same_aux(m, col, k, b, toRow - 1, p / 2)
+        assert repColInv(m, toRow + 1, col) setminus Multiset(M(toRow, col)) == repColInv(m, toRow, col) // Needed
+    }
+}
+
+
+method lemma_two_functions_same(m: NMatrix, col: Int, k: Int, b: Int, p: Perm)
+    requires p > none
+    requires acc(access_column(m, col), p)
+    requires col >= 0 && col < dim(m)
+
+    
+    ensures acc(access_column(m, col), p)
+    ensures numbersOfElemsCol(m, col, k, b, dim(m) - 1) == numberOfElemsMulti(repCol(m, 0, col), k, b)
+    // repRow(m: NMatrix, row: Int, fromCol: Int): Multiset[Int]
+{
+    lemma_two_functions_same_aux(m, col, k, b, dim(m) - 1, p)
+    assert repColInv(m, dim(m), col) == repCol(m, 0, col)
+}
+
+method lemma_two_functions_same_both(m: NMatrix, col: Int, k: Int, p: Perm)
+    requires p > none
+    requires acc(access_column(m, col), p)
+    requires col >= 0 && col < dim(m)
+
+    
+    ensures acc(access_column(m, col), p)
+    ensures numbersOfElemsCol(m, col, k, 0, dim(m) - 1) == numberOfElemsMulti(repCol(m, 0, col), k, 0)
+    ensures numbersOfElemsCol(m, col, k, 1, dim(m) - 1) == numberOfElemsMulti(repCol(m, 0, col), k, 1)
+
+    // repRow(m: NMatrix, row: Int, fromCol: Int): Multiset[Int]
+
+
+
+function b2i(b: Bool): Int
+    ensures result == 0 <==> !b
+    ensures result == 1 <==> b
+    ensures result >= 0
+{
+    b ? 1 : 0
+}
+
+method proofPart1(m: NMatrix, k: Int, p: Perm) returns (n_min_zeros: Int, n_min_ones: Int)
+    requires p > none
+    requires acc(access_matrix(m), p)
+    requires sortedRows(m)
+    
+    ensures acc(access_matrix(m), p)
+    
+    ensures n_min_zeros + n_min_ones >= (dim(m) - 1) / 2
+    ensures forall col:Int :: { numbersOfElemsCol(m, col, k, 0, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 0, dim(m) - 1) >= n_min_zeros
+    ensures forall col:Int :: { numbersOfElemsCol(m, col, k, 1, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 1, dim(m) - 1) >= n_min_ones
+
+{
+
+    n_min_zeros := 0
+    n_min_ones := 0
+    var row: Int :=  -1
+
+    while (row < dim(m) - 2)
+        invariant acc(access_matrix(m), p / 2)
+        invariant sortedRows(m)
+        invariant row % 2 == 1
+        invariant row >= -1 && row < dim(m)
+
+        invariant n_min_zeros + n_min_ones >= (row + 1) / 2
+        invariant forall col:Int :: { numbersOfElemsCol(m, col, k, 0, row) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 0, row) >= n_min_zeros
+        invariant forall col:Int :: { numbersOfElemsCol(m, col, k, 1, row) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(m, col, k, 1, row) >= n_min_ones
+
+    {
+        
+        var b: Int
+
+        var r1: Int := row + 1
+        var r2: Int := row + 2
+
+        assert even(r1)
+        assert !even(r2)
+
+        label before
+
+        b := combineTwoRows(m, r1, r2, k, p / 4)
+
+        assert forall col:Int :: { numbersOfElemsCol(m, col, k, 0, row) } col >= 0 && col < dim(m) ==>
+            numbersOfElemsCol(m, col, k, 0, row) == old[before](numbersOfElemsCol(m, col, k, 0, row) )
+
+        assert forall col:Int :: { numbersOfElemsCol(m, col, k, 1, row) } col >= 0 && col < dim(m) ==>
+            numbersOfElemsCol(m, col, k, 1, row) == old[before](numbersOfElemsCol(m, col, k, 1, row) )
+
+        if (b == 0) {
+            n_min_zeros := n_min_zeros + 1
+        }
+        else {
+            n_min_ones := n_min_ones + 1
+        }
+        assert forall col:Int :: { numbersOfElemsCol(m, col, k, 0, row) } col >= 0 && col < dim(m) ==>
+            numbersOfElemsCol(m, col, k, 0, r2) == b2i(bin(M(r2, col), k) == 0) + numbersOfElemsCol(m, col, k, 0, r1)
+
+        assert forall col:Int :: { numbersOfElemsCol(m, col, k, 1, row) } col >= 0 && col < dim(m) ==>
+            numbersOfElemsCol(m, col, k, 1, r2) == b2i(bin(M(r2, col), k) == 1) + numbersOfElemsCol(m, col, k, 1, r1)
+
+
+        row := row + 2
+
+    }
+
+}
+
+function dd(m: NMatrix): Int
+    ensures result == dim(m) - 1
+{
+    dim(m) - 1
+}
+
+function pos(n: Int): Bool
+    ensures result <==> n >= 0
+
+predicate propertyRec(m: NMatrix, n_zeros: Int, n_ones: Int, k: Int, fromCol: Int)
+    //ensures result ==> forall col:Int :: { repCol(m, 0, col) } col >= fromCol && col < dim(m) ==> numberOfElemsMulti(repCol(m, 0, col), k, 0) >= n_zeros
+    //ensures result ==> forall col:Int :: { repCol(m, 0, col) } col >= fromCol && col < dim(m) ==> numberOfElemsMulti(repCol(m, 0, col), k, 1) >= n_ones
+{
+    0 <= fromCol && fromCol <= dim(m) &&
+    (fromCol < dim(m) ==> (access_column(m, fromCol) && propertyRec(m, n_zeros, n_ones, k, fromCol + 1) && numberOfElemsMulti(repCol(m, 0, fromCol), k, 0) >= n_zeros && numberOfElemsMulti(repCol(m, 0, fromCol), k, 1) >= n_ones))
+}
+
+
+method provePropertyRec(m: NMatrix, k: Int, p1: Perm, p2: Perm, n_min_zeros: Int, n_min_ones: Int, fromCol: Int)
+    requires p1 > none && p2 > none
+    requires acc(access_matrix(m), p1 + p2)
+    requires 0 <= fromCol && fromCol <= dim(m)
+    requires forall col:Int :: { numbersOfElemsCol(m, col, k, 0, dd(m)) } col >= fromCol && col < dim(m) ==> numbersOfElemsCol(m, col, k, 0, dd(m)) >= n_min_zeros
+    requires forall col:Int :: { numbersOfElemsCol(m, col, k, 1, dd(m)) } col >= fromCol && col < dim(m) ==> numbersOfElemsCol(m, col, k, 1, dd(m)) >= n_min_ones
+
+
+    ensures acc(access_matrix(m), p1)
+    ensures forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < dim(m) && j < fromCol ==> acc(slot(m,i,j).val, p2)
+
+
+    ensures acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol), p2)
+
+{
+    if (fromCol < dim(m)) {
+        provePropertyRec(m, k, p1 / 2, p2, n_min_zeros, n_min_ones, fromCol + 1)
+        assert acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol + 1), p2)
+        lemma_two_functions_same(m, fromCol, k, 0, p1 / 4)
+
+        assert numbersOfElemsCol(m, fromCol, k, 0, dd(m)) == old(numbersOfElemsCol(m, fromCol, k, 0, dd(m)))
+        assert numbersOfElemsCol(m, fromCol, k, 1, dd(m)) == old(numbersOfElemsCol(m, fromCol, k, 1, dd(m)))
+
+
+        label b
+
+        lemma_two_functions_same(m, fromCol, k, 1, p1 / 4)
+
+
+
+        assert numbersOfElemsCol(m, fromCol, k, 0, dd(m)) == old[b](numbersOfElemsCol(m, fromCol, k, 0, dd(m)))
+        assert numbersOfElemsCol(m, fromCol, k, 1, dd(m)) == old[b](numbersOfElemsCol(m, fromCol, k, 1, dd(m)))
+
+        assert old(numbersOfElemsCol(m, fromCol, k, 0, dim(m) - 1)) == numberOfElemsMulti(repCol(m, 0, fromCol), k, 0)
+        assert old(numbersOfElemsCol(m, fromCol, k, 1, dim(m) - 1)) == numberOfElemsMulti(repCol(m, 0, fromCol), k, 1)
+
+
+        assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 0) >= n_min_zeros
+        assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 1) >= n_min_ones
+
+        assert 0 <= fromCol
+        assert fromCol <= dim(m)
+        if (fromCol < dim(m)) {
+            assert acc(access_column(m, fromCol), p2)
+            assert acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol + 1), p2)
+            assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 0) >= n_min_zeros
+            assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 1) >= n_min_ones
+        }
+
+        fold acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol), p2)
+
+    }
+    else {
+
+        assume false
+
+        fold acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol), p2)
+    }
+}
+
+*/
