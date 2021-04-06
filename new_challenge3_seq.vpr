@@ -26,6 +26,35 @@ domain NMatrix {
 
 }
 
+function toSeqRow(m: NMatrix, row: Int) : Seq[Int]
+    requires access_row_frac(m, row, wildcard)
+    requires row >= 0 && row < dim(m)
+
+    ensures |result| == dim(m) && (forall col: Int :: {result[col]} {M(row,col)} 
+    (0 <= col && col < dim(m) ==> result[col] == M(row,col)))
+
+function toSeqCol(m: NMatrix, col: Int) : Seq[Int]
+    requires access_column_frac(m, col, wildcard)
+    requires col >= 0 && col < dim(m)
+
+    ensures |result| == dim(m) && (forall row: Int :: {result[row]} {M(row,col)} 
+    (0 <= row && row < dim(m) ==> result[row] == M(row,col)))
+
+
+function toSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, wildcard)
+    ensures squareSeq(result)
+    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row < dim(m) ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+
+    ensures |result| == dim(m) && (forall row:Int :: {result[row]} 0 <= row && row < dim(m) ==> 
+      result[row] == toSeqRow(m, row))
+
+
+// easy to implement if needed
+
+
 // CODE
 
 field val: Int // heap location per slot per matrix
@@ -33,15 +62,24 @@ field val: Int // heap location per slot per matrix
 method sort_row(m: NMatrix, row: Int, ascending: Bool)
   requires access_row(m, row)
   requires row >= 0 && row < dim(m)
+
   ensures access_row(m, row)
   ensures repRow(m, row, 0) == old(repRow(m, row, 0))
+  ensures repRowSeqSingle(toSeqRow(m, row), 0) == old(repRowSeqSingle(toSeqRow(m, row), 0))
+  ensures seqSorted(toSeqRow(m, row), ascending)
+  
   //TOSEQ: ensures rowSorted(S, row, even(row))
+
+
+
 
 method sort_column(m: NMatrix, column: Int)
   requires access_column(m, column)
   requires column >= 0 && column < dim(m)
   ensures access_column(m, column)
   ensures repCol(m, 0, column) == old(repCol(m, 0, column))
+  ensures toSeqCol(m, column) == old(toSeqCol(m, column))
+  ensures seqSorted(toSeqCol(m, column), true)
 
 method shearsort(n: Int, m: NMatrix)
   requires access_matrix(m)
@@ -58,6 +96,11 @@ method shearsort(n: Int, m: NMatrix)
   var k: Int // uninitialised - represents an "arbitrary bound" with respect to sorting properties proven
   var p: Int := 0
 
+  var n0: Int := 0
+  var n1: Int := 0
+
+  var S: Seq[Seq[Int]] := toSeq(m)
+
   // i < ceil(log2(n)) + 1
   // <=> i < log2(n) + 1
   // <=> i - 1 < log2(n)
@@ -70,6 +113,14 @@ method shearsort(n: Int, m: NMatrix)
     invariant repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
     invariant repByCols(m, 0, 0) == old(repByCols(m, 0, 0))
 
+    invariant S == toSeq(m)
+    invariant squareSeq(S)
+    invariant n0 >= 0 && n1 >= 0
+    invariant n0 + n1 <= |S|
+    invariant goodRowsZero(S, k, n0)
+    invariant goodRowsOne(S, k, n1)
+
+
     decreases 2*n - two_exponent(p) // task 1: Termination (memory safety is implicit with permissions)
     //invariant forall r: Int :: 0 <= r && r < rowsLessThanK ==> // all values are <= k
     //invariant forall r: Int :: rowsGtK <= r && r < dim(m) ==> // all values are >= k
@@ -77,15 +128,39 @@ method shearsort(n: Int, m: NMatrix)
 
     label before1
 
+    assert forall i:Int :: { S[i] } i >= 0 && i < |S| ==> S[i] == toSeqRow(m, i)
+
     // First inner parallel loop
     // Corresponds to forking n threads (per tid instance): the exhales model transfer of heap ownership && value info per thread
     exhale forall tid:Int :: { repRow(m, tid, 0) } tid >= 0 && tid < n ==> P1(m, tid)
     // The corresponding loop body is checked in a separate Viper "method" first_inner_loop below
     // Corresponds to joining n threads (per tid instance): the inhales model transfer of heap ownership && value info per thread
-    inhale forall tid:Int :: { repRow(m, tid, 0) } {even(tid)} tid >= 0 && tid < n ==> Q1(m, tid, before1)
+    inhale forall tid:Int :: { repRow(m, tid, 0) } { toSeqRow(m, tid) } {even(tid)} tid >= 0 && tid < n ==> Q1(m, tid, before1)
 
-    // Sorted by rows
-    //TOSEQ: assert sortedRows(m)
+
+// repRowSeqSingle(toSeqRow(m, tid), 0) == old[lab](repRowSeqSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+    
+    var S1: Seq[Seq[Int]] := toSeq(m)
+    
+    assert forall i:Int :: { S[i] } {S1[i]} i >= 0 && i < dim(m) ==> repRowSeqSingle(S[i], 0) == repRowSeqSingle(S1[i], 0)
+
+    lemma_same_rows(S, S1)
+    goodRowsStableByRowSort(S, S1, k, n0, n1)
+
+
+    var m0: Int
+    var m1: Int
+
+    m0, m1 := part1(S1, k, n0, n1)
+
+    assert m0 + m1 - (n0 + n1) >= (|S1| - (n0 + n1)) / 2
+
+        
+    assert forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 0, dd(S1)) >= m0
+    assert forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 1, dd(S1)) >= m1
+    assert forall col:Int :: { repColSeq(S1, 0, col) }  col >= 0 && col < |S1| ==> numberOfElemsMulti(repColSeq(S1, 0, col), k, 0) >= m0
+    assert forall col:Int :: { repColSeq(S1, 0, col) }  col >= 0 && col < |S1| ==> numberOfElemsMulti(repColSeq(S1, 0, col), k, 1) >= m1
+
 
 
     // Ghost proof
@@ -102,30 +177,16 @@ method shearsort(n: Int, m: NMatrix)
 
     var n_min_zeros: Int
     var n_min_ones: Int
-    //TOSEQ: n_min_zeros, n_min_ones := proofPart1(m, k, 1 / 4)
-
-    //TOSEQ: assert n_min_zeros + n_min_ones >= (dim(m) - 1) / 2
-    //TOSEQ: assert forall col:Int :: { numbersOfElemsCol(S, col, k, 0, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(S, col, k, 0, dim(m) - 1) >= n_min_zeros
-    //TOSEQ: assert forall col:Int :: { numbersOfElemsCol(S, col, k, 1, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(S, col, k, 1, dim(m) - 1) >= n_min_ones
 
 
-    /*
-    requires p > none
-    requires access_matrix_frac(m, p)
-    requires sortedRows(m)
-    
-    ensures access_matrix_frac(m, p)
-    
-    ensures n_min_zeros + n_min_ones >= (dim(m) - 1) / 2
-    ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 0, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(S, col, k, 0, dim(m) - 1) >= n_min_zeros
-    ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 1, 0) } col >= 0 && col < dim(m) ==> numbersOfElemsCol(S, col, k, 1, dim(m) - 1) >= n_min_ones
-*/
-    
-    // counting rows idea:
-    //var asColRow : Seq[Seq[Int]] := asColRowSeqSeq(m)
-    //var fewestLtK : Int := colmin_lt(m,asColRow,k)
-    //var fewestGtK : Int := colmin_gt(m,asColRow,k)
-    // (fewestGtk - fewestLtK) * 2 <=  rowsGtK - rowsLessThanK
+    assert m0 + m1 - (n0 + n1) >= (|S1| - (n0 + n1)) / 2
+
+        
+    assert forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 0, dd(S1)) >= m0
+    assert forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 1, dd(S1)) >= m1
+    assert forall col:Int :: { repColSeq(S1, 0, col) }  col >= 0 && col < |S1| ==> numberOfElemsMulti(repColSeq(S1, 0, col), k, 0) >= m0
+    assert forall col:Int :: { repColSeq(S1, 0, col) }  col >= 0 && col < |S1| ==> numberOfElemsMulti(repColSeq(S1, 0, col), k, 1) >= m1
+
 
     assert repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
     helper_lemma(m, 0, 1/2)
@@ -133,9 +194,44 @@ method shearsort(n: Int, m: NMatrix)
 
     label before2
 
+    assert S1 == toSeq(m)
+
     // Second inner parallel loop
     exhale forall tid:Int :: { repCol(m, 0, tid) } tid >= 0 && tid < n ==> P2(m, tid)
     inhale forall tid:Int :: { repCol(m, 0, tid) } tid >= 0 && tid < n ==> Q2(m, tid, before2)
+
+    S := toSeq(m)
+
+    assume false
+
+
+    assume forall col:Int :: { numbersOfElemsCol(S1, col, k, 0, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 0, dd(S1)) >= m0
+    assume forall col:Int :: { numbersOfElemsCol(S1, col, k, 1, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 1, dd(S1)) >= m1
+
+
+    assume sameCols(S1, S)
+    assume sortedCols(S)
+
+    part2(S1, S, k, m0, m1)
+
+
+
+    /*
+    method part2(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int)
+    
+    requires squareSeq(S1) && squareSeq(S2) && |S1| == |S2|
+    requires forall col:Int :: { numbersOfElemsCol(S1, col, k, 0, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 0, dd(S1)) >= n_zeros
+    requires forall col:Int :: { numbersOfElemsCol(S1, col, k, 1, dd(S1)) } col >= 0 && col < |S1| ==> numbersOfElemsCol(S1, col, k, 1, dd(S1)) >= n_ones
+
+    requires sameCols(S1, S2)
+
+    requires sortedCols(S2)
+    requires n_zeros <= |S1|
+    requires n_ones <= |S1|
+
+    ensures goodRowsOne(S2, k, n_ones)
+    ensures goodRowsZero(S2, k, n_zeros)
+    */
 
     // Ghost proof
     j := n
@@ -152,6 +248,9 @@ method shearsort(n: Int, m: NMatrix)
 
 
     p := p + 1
+
+        assume false
+
   }
 }
 
@@ -171,7 +270,8 @@ function two_exponent(n: Int): Int
 // Parallel loops
 
 define P1(m, tid) access_row(m, tid) && tid >= 0 && tid < dim(m)
-define Q1(m, tid, lab) access_row(m, tid) && repRow(m, tid, 0) == old[lab](repRow(m, tid, 0))
+define Q1(m, tid, lab) access_row(m, tid) && repRow(m, tid, 0) == old[lab](repRow(m, tid, 0)) && repRowSeqSingle(toSeqRow(m, tid), 0) == old[lab](repRowSeqSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+
 //TOSEQ:  && rowSorted(S, tid, even(tid))
 
 method first_inner_loop(m: NMatrix, tid: Int)
@@ -193,7 +293,45 @@ method second_inner_loop(m: NMatrix, tid: Int)
   sort_column(m, tid)
 }
 
+
+
+
+
+
+
+
+
+
+
 // Specifications
+
+method lemma_same_rows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]])
+    requires squareSeq(S1) && squareSeq(S2) && |S1| == |S2|
+    requires forall i:Int :: { S1[i] } {S2[i]} i >= 0 && i < |S1| ==> repRowSeqSingle(S1[i], 0) == repRowSeqSingle(S2[i], 0)
+    ensures sameRows(S1, S2)
+{
+    var n: Int := 0
+    while (n < |S1|)
+        invariant n >= 0 && n <= |S1|
+        invariant forall i:Int :: { repRowSeq(S1, 0, i) } { repRowSeq(S2, 0, i) } i >= 0 && i < n ==> repRowSeq(S1, 0, i) == repRowSeq(S2, 0, i)
+    {
+        lemma_rep_row_seq_single_same(S1, 0, n)
+        lemma_rep_row_seq_single_same(S2, 0, n)
+        n := n + 1
+    }
+}
+
+method lemma_rep_row_seq_single_same(S: Seq[Seq[Int]], fromCol: Int, row: Int)
+    requires squareSeq(S)
+    requires fromCol >= 0 && fromCol <= |S|
+    requires row >= 0 && row < |S|
+    ensures repRowSeq(S, fromCol, row) == repRowSeqSingle(S[row], fromCol)
+{
+    if (fromCol < |S|) {
+        lemma_rep_row_seq_single_same(S, fromCol + 1, row)
+    }
+}
+
 
 define M(i, j) slot(m,i,j).val // maybe use this in code?
 
@@ -457,18 +595,14 @@ function sameRows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]]): Bool
 
 // Second part: Sortedness
 
-function asRowColSeqSeq(m: NMatrix) : Seq[Seq[Int]]
-    requires access_matrix_frac(m, wildcard)
-    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
-    0 <= row && row < dim(m) ==> 
-      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
-// easy to implement if needed
-
+/*
 function asColRowSeqSeq(m: NMatrix) : Seq[Seq[Int]]
     requires access_matrix_frac(m, wildcard)
     ensures |result| == dim(m) && (forall col:Int , row: Int :: {result[col][row]}{M(row,col)} 0 <= col && col < dim(m) ==> 
       |result[col]| == dim(m) && (0 <= row && row < dim(m) ==> result[col][row] == M(row,col)))
 // easy to implement if needed
+*/
+
 
 define squareSeq(S) forall i:Int :: { S[i] } i >= 0 && i < |S| ==> |S[i]| == |S|
 
@@ -477,6 +611,11 @@ function rowSorted(S: Seq[Seq[Int]], row: Int, ascending: Bool): Bool
     requires squareSeq(S)
 {
     forall i:Int, j:Int :: { S[row][i], S[row][j] } 0 <= i && i < j && j < |S| ==> (ascending ? S[row][i] <= S[row][j] : S[row][j] <= S[row][i])
+}
+
+function seqSorted(S: Seq[Int], ascending: Bool): Bool
+{
+    forall i:Int, j:Int :: { S[i], S[j] } 0 <= i && i < j && j < |S| ==> (ascending ? S[i] <= S[j] : S[j] <= S[i])
 }
 
 
@@ -622,6 +761,13 @@ function repRowSeq(S: Seq[Seq[Int]], fromCol: Int, row: Int): Multiset[Int]
 {
     fromCol < |S| ? Multiset(S[row][fromCol]) union repRowSeq(S, fromCol + 1, row) : Multiset()
 }
+
+function repRowSeqSingle(S: Seq[Int], fromCol: Int): Multiset[Int]
+    requires fromCol >= 0 && fromCol <= |S|
+{
+    fromCol < |S| ? Multiset(S[fromCol]) union repRowSeqSingle(S, fromCol + 1) : Multiset()
+}
+
 
 
 // toRow excluded
