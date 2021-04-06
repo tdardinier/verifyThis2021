@@ -24,15 +24,6 @@ domain NMatrix {
       dim(a) >= 0
   }
 
-  function tl_submatrix(a: NMatrix): NMatrix
-
-  axiom tl_submatrix_def {
-    forall a:NMatrix :: { tl_submatrix(a) } dim(a) >= 1 ==>
-      dim(tl_submatrix(a)) == dim(a) - 1 &&
-        forall i:Int, j:Int :: { slot(a, i, j) } {slot(tl_submatrix(a), i, j)} i >= 0 && i < dim(a) - 1 && j >= 0 && j < dim(a) - 1
-        ==> slot(tl_submatrix(a), i, j) == slot(a, i, j)
-  }
-
 }
 
 // CODE
@@ -283,6 +274,48 @@ function even(i: Int): Bool
 
 
 
+// SUMMARY
+
+method part1(S: Seq[Seq[Int]], k: Int) returns (n_min_zeros: Int, n_min_ones: Int)
+    
+    requires squareSeq(S)
+    requires sortedRows(S)
+        
+    ensures n_min_zeros + n_min_ones >= |S| / 2
+    ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_min_zeros
+    ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_min_ones
+    ensures forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 0) >= n_min_zeros
+    ensures forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 1) >= n_min_ones
+{
+    n_min_zeros, n_min_ones := part1_aux(S, k)
+    sameAllAux(S, k, 0, 0)
+    sameAllAux(S, k, 1, 0)
+}
+
+method part2(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int)
+    
+    requires squareSeq(S)
+    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_zeros
+    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_ones
+
+    requires sortedCols(S)
+    requires n_zeros <= |S|
+    requires n_ones <= |S|
+
+    ensures goodRowsOne(S, k, n_ones)
+    ensures goodRowsZero(S, k, n_zeros)
+
+{
+    if (|S| >= 1) {
+        assert numbersOfElemsCol(S, 0, k, 1, dd(S)) <=|S|
+        assert n_ones <= numbersOfElemsCol(S, 0, k, 1, dd(S))
+        part2_aux_zeros(S, k, n_zeros, 0)
+        part2_aux_ones(S, k, n_ones, dd(S))
+    }
+}
+
+
+
 
 // Second part: Sortedness
 
@@ -320,18 +353,28 @@ function bin(x: Int, k: Int): Int
     ensures result == 1 <==> x > k
 
 
-// TODO: Implement
-method rowSortedExistsIndex(S: Seq[Seq[Int]], row: Int, k: Int, ascending: Bool, from: Int) returns (index: Int)
+method rowSortedExistsIndex(S: Seq[Seq[Int]], row: Int, k: Int, ascending: Bool) returns (index: Int)
     requires row >= 0 && row < |S|
-    requires from >= 0 && from < |S|
     requires squareSeq(S)
+    requires rowSorted(S, row, ascending)
 
     ensures index >= 0 && index <= |S|
     ensures forall i:Int :: { S[row][i] } i >= 0 && i < |S| && i < index ==> (ascending ? bin(S[row][i], k) == 0 : bin(S[row][i], k) == 1)
     ensures forall i:Int :: { S[row][i] } i >= 0 && i < |S| && i >= index ==> (ascending ? bin(S[row][i], k) == 1 : bin(S[row][i], k) == 0)
 {
-    if (from < |S|) {
-        assume false
+    index := 0
+    while (index < |S| && (ascending ? bin(S[row][index], k) == 0 : bin(S[row][index], k) == 1))
+        invariant index >= 0 && index <= |S|
+        invariant forall i:Int :: { S[row][i] } i >= 0 && i < |S| && i < index ==> (ascending ? bin(S[row][i], k) == 0 : bin(S[row][i], k) == 1)
+    {
+        index := index + 1
+    }
+    var j: Int := index
+    while (j < |S|)
+        invariant j >= index && j <= |S|
+        invariant forall i:Int :: { S[row][i] } i >= 0 && i < j && i >= index ==> (ascending ? bin(S[row][i], k) == 1 : bin(S[row][i], k) == 0)
+    {
+        j := j + 1
     }
 }
 
@@ -373,9 +416,9 @@ method combineTwoRows(S: Seq[Seq[Int]], r1: Int, r2: Int, k: Int) returns (b: In
     ensures forall i:Int :: { S[r1][i] } { S[r2][i] }  i >= 0 && i < |S| ==> (bin(S[r1][i], k) == b || bin(S[r2][i], k) == b)
 {
     var i1: Int
-    i1 := rowSortedExistsIndex(S, r1, k, true, 0)
+    i1 := rowSortedExistsIndex(S, r1, k, true)
     var i2: Int
-    i2 := rowSortedExistsIndex(S, r2, k, false, 0)
+    i2 := rowSortedExistsIndex(S, r2, k, false)
 
     if (i1 >= i2) {
         b := 0
@@ -407,9 +450,23 @@ function numbersOfElemsCol(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, toRow: In
     requires toRow >= -1 && toRow < |S|
     requires col >= 0 && col < |S|
     ensures toRow >= 0 ==> result >= numbersOfElemsCol(S, col, k, b, toRow - 1)
+    ensures result <= toRow + 1
+
 {
     toRow == -1 ? 0 : (b2i(bin(S[toRow][col], k) == b) + numbersOfElemsCol(S, col, k, b, toRow - 1))
 }
+
+// Returns the set of rows in which at the column col we have a b for bin(k, b)
+function numbersOfElemsColInv(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, fromRow: Int): Int
+    requires squareSeq(S)
+    requires fromRow >= 0 && fromRow <= |S|
+    requires col >= 0 && col < |S|
+    ensures result + numbersOfElemsCol(S, col, k, b, fromRow - 1) == numbersOfElemsCol(S, col, k, b, |S| - 1) 
+    ensures result <= |S| - fromRow
+{
+    fromRow == |S| ? 0 : (b2i(bin(S[fromRow][col], k) == b) + numbersOfElemsColInv(S, col, k, b, fromRow + 1))
+}
+
 
 function repColSeq(S: Seq[Seq[Int]], fromRow: Int, col: Int): Multiset[Int]
     requires squareSeq(S)
@@ -556,22 +613,6 @@ method sameAllAux(S: Seq[Seq[Int]], k: Int, b: Int, fromCol: Int)
     }
 }
 
-method part1(S: Seq[Seq[Int]], k: Int) returns (n_min_zeros: Int, n_min_ones: Int)
-    
-    requires squareSeq(S)
-    requires sortedRows(S)
-        
-    ensures n_min_zeros + n_min_ones >= |S| / 2
-    ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_min_zeros
-    ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_min_ones
-    ensures forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 0) >= n_min_zeros
-    ensures forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 1) >= n_min_ones
-{
-    n_min_zeros, n_min_ones := part1_aux(S, k)
-    sameAllAux(S, k, 0, 0)
-    sameAllAux(S, k, 1, 0)
-}
-
 // PART 2
 
 function colSorted(S: Seq[Seq[Int]], col: Int): Bool
@@ -632,10 +673,10 @@ method witness_one(S: Seq[Seq[Int]], k: Int, b: Int, toRow: Int, col: Int) retur
 
 method part2_aux_ones(S: Seq[Seq[Int]], k: Int, n: Int, toRow: Int)
     requires squareSeq(S)
-    requires toRow >= 0 && toRow < |S|
+    requires toRow >= -1 && toRow < |S|
     requires forall col:Int :: { numbersOfElemsCol(S, col, k, 1, toRow) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, toRow) >= n
     requires sortedCols(S)
-    requires n <= toRow
+    requires n <= toRow + 1
     requires goodRowsOne(S, k, |S| - toRow - 1)
 
     ensures goodRowsOne(S, k, n + (|S| - toRow - 1))
@@ -664,23 +705,67 @@ method part2_aux_ones(S: Seq[Seq[Int]], k: Int, n: Int, toRow: Int)
     }
 }
 
-method part2(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int)
-    
+method witness_zero(S: Seq[Seq[Int]], k: Int, fromRow: Int, col: Int) returns (index: Int)
     requires squareSeq(S)
-    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_zeros
-    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_ones
-    requires forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 0) >= n_zeros
-    requires forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 1) >= n_ones
+    requires col >= 0 && col < |S|
+    requires fromRow >= 0 && fromRow < |S|
+    
+    requires numbersOfElemsColInv(S, col, k, 0, fromRow) > 0
 
+    ensures index >= fromRow && index < |S|
+    ensures bin(S[index][col], k) == 0
+{
+    assert b2i(bin(S[fromRow][col], k) == 0) + numbersOfElemsColInv(S, col, k, 0, fromRow + 1) > 0
+    if (bin(S[fromRow][col], k) == 0) {
+        index := fromRow
+    }
+    else {
+        assert numbersOfElemsColInv(S, col, k, 0, fromRow + 1) > 0
+        index := witness_zero(S, k, fromRow + 1, col)
+    }
+}
+/*
+
+function numbersOfElemsColInv(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, fromRow: Int): Int
+    requires squareSeq(S)
+    requires fromRow >= 0 && fromRow <= |S|
+    requires col >= 0 && col < |S|
+    ensures result + numbersOfElemsCol(S, col, k, b, fromRow - 1) == numbersOfElemsCol(S, col, k, b, |S| - 1) 
+{
+    fromRow == |S| ? 0 : (b2i(bin(S[fromRow][col], k) == b) + numbersOfElemsColInv(S, col, k, b, fromRow + 1))
+}
+*/
+
+method part2_aux_zeros(S: Seq[Seq[Int]], k: Int, n: Int, fromRow: Int)
+    requires squareSeq(S)
+    requires fromRow >= 0 && fromRow <= |S|
+    requires forall col:Int :: { numbersOfElemsColInv(S, col, k, 0, fromRow) } col >= 0 && col < |S| ==> numbersOfElemsColInv(S, col, k, 0, fromRow) >= n
     requires sortedCols(S)
-    requires n_zeros <= |S|
-    requires n_ones <= |S|
+    requires n + fromRow <= |S|
+    requires goodRowsZero(S, k, fromRow)
 
-    ensures goodRowsZero(S, k, n_zeros)
-    ensures goodRowsOne(S, k, n_ones)
-
-
-    //ensures forall i:Int :: {  } i >= 0 && 
-
-    // ensures n_min_zeros good rows on top
-    // ensures n_min_ones good rows on bottom
+    ensures goodRowsZero(S, k, fromRow + n)
+{
+    if (n > 0) {
+        var i: Int := 0
+        while (i < |S|)
+            invariant i >= 0 && i <= |S|
+            invariant forall j:Int :: { S[fromRow][j] } 0 <= j && j < i ==> S[fromRow][j] <= k
+        {
+            var index: Int
+            index := witness_zero(S, k, fromRow, i)
+            assert colSorted(S, i)
+            i := i + 1
+        }
+        var m: Int := fromRow + 1
+        i := 0
+        while (i < |S|)
+            invariant i >= 0 && i <= |S|
+            invariant forall col:Int :: { numbersOfElemsColInv(S, col, k, 0, m) } col >= 0 && col < i ==> numbersOfElemsColInv(S, col, k, 0, m) >= n - 1
+        {
+            assert numbersOfElemsColInv(S, i, k, 0, fromRow) == (b2i(bin(S[fromRow][i], k) == 0) + numbersOfElemsColInv(S, i, k, 0, m))
+            i := i + 1
+        }
+        part2_aux_zeros(S, k, n - 1, m)
+    }
+}
