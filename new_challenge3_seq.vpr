@@ -91,7 +91,6 @@ method shearsort(n: Int, m: NMatrix)
     exhale forall tid:Int :: { repRow(m, tid, 0) } tid >= 0 && tid < n ==> P1(m, tid)
     // The corresponding loop body is checked in a separate Viper "method" first_inner_loop below
     // Corresponds to joining n threads (per tid instance): the inhales model transfer of heap ownership && value info per thread
-    //TOSEQ: inhale forall tid:Int :: { repRow(m, tid, 0) } {even(tid)} tid >= 0 && tid < n ==> Q1(m, tid, before1)
     inhale forall tid:Int :: { repRow(m, tid, 0) } {even(tid)} tid >= 0 && tid < n ==> Q1(m, tid, before1)
 
     // Sorted by rows
@@ -490,7 +489,7 @@ method part1_aux(S: Seq[Seq[Int]], k: Int) returns (n_min_zeros: Int, n_min_ones
     requires squareSeq(S)
     requires sortedRows(S)
         
-    ensures n_min_zeros + n_min_ones >= (|S| - 1) / 2
+    ensures n_min_zeros + n_min_ones >= |S| / 2
     ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_min_zeros
     ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_min_ones
 {
@@ -562,7 +561,7 @@ method part1(S: Seq[Seq[Int]], k: Int) returns (n_min_zeros: Int, n_min_ones: In
     requires squareSeq(S)
     requires sortedRows(S)
         
-    ensures n_min_zeros + n_min_ones >= (|S| - 1) / 2
+    ensures n_min_zeros + n_min_ones >= |S| / 2
     ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_min_zeros
     ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_min_ones
     ensures forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 0) >= n_min_zeros
@@ -573,88 +572,115 @@ method part1(S: Seq[Seq[Int]], k: Int) returns (n_min_zeros: Int, n_min_ones: In
     sameAllAux(S, k, 1, 0)
 }
 
-/*
+// PART 2
 
-function pos(n: Int): Bool
-    ensures result <==> n >= 0
-
-predicate propertyRec(S: Seq[Seq[Int]], n_zeros: Int, n_ones: Int, k: Int, fromCol: Int)
-    //ensures result ==> forall col:Int :: { repCol(m, 0, col) } col >= fromCol && col < |S| ==> numberOfElemsMulti(repCol(m, 0, col), k, 0) >= n_zeros
-    //ensures result ==> forall col:Int :: { repCol(m, 0, col) } col >= fromCol && col < |S| ==> numberOfElemsMulti(repCol(m, 0, col), k, 1) >= n_ones
+function colSorted(S: Seq[Seq[Int]], col: Int): Bool
+    requires col >= 0 && col < |S|
+    requires squareSeq(S)
 {
-    0 <= fromCol && fromCol <= |S| &&
-    (fromCol < |S| ==> (access_column(m, fromCol) && propertyRec(m, n_zeros, n_ones, k, fromCol + 1) && numberOfElemsMulti(repCol(m, 0, fromCol), k, 0) >= n_zeros && numberOfElemsMulti(repCol(m, 0, fromCol), k, 1) >= n_ones))
+    forall i:Int, j:Int :: { S[i][col], S[j][col] } 0 <= i && i < j && j < |S| ==> S[i][col] <= S[j][col]
 }
 
 
-method provePropertyRec(S: Seq[Seq[Int]], k: Int, p1: Perm, p2: Perm, n_min_zeros: Int, n_min_ones: Int, fromCol: Int)
-    requires p1 > none && p2 > none
-    requires access_matrix_frac(m, p1 + p2)
-    requires 0 <= fromCol && fromCol <= |S|
-    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(m)) } col >= fromCol && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(m)) >= n_min_zeros
-    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(m)) } col >= fromCol && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(m)) >= n_min_ones
-
-
-    ensures access_matrix_frac(m, p1)
-    ensures forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < |S| && j < fromCol ==> acc(slot(m,i,j).val, p2)
-
-
-    ensures acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol), p2)
-
+function sortedCols(S: Seq[Seq[Int]]): Bool
+    requires squareSeq(S)
 {
-    if (fromCol < |S|) {
-        provePropertyRec(m, k, p1 / 2, p2, n_min_zeros, n_min_ones, fromCol + 1)
-        assert acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol + 1), p2)
-        lemma_two_functions_same(m, fromCol, k, 0, p1 / 4)
+    forall i:Int :: { colSorted(S, i) } 0 <= i && i < |S| ==> colSorted(S, i)
+}
 
-        assert numbersOfElemsCol(S, fromCol, k, 0, dd(m)) == old(numbersOfElemsCol(S, fromCol, k, 0, dd(m)))
-        assert numbersOfElemsCol(S, fromCol, k, 1, dd(m)) == old(numbersOfElemsCol(S, fromCol, k, 1, dd(m)))
+function goodRow(S: Seq[Seq[Int]], k: Int, zero: Bool, row: Int): Bool
+    requires squareSeq(S)
+    requires row >= 0 && row < |S|
+{
+    forall i:Int :: { S[row][i] } 0 <= i && i < |S| ==> (zero ? S[row][i] <= k : S[row][i] > k)
+}
 
+function goodRowsZero(S: Seq[Seq[Int]], k: Int, n: Int): Bool
+    requires squareSeq(S)
+    requires n <= |S|
+{
+    forall i:Int :: { goodRow(S, k, true, i) } 0 <= i && i < n ==> goodRow(S, k, true, i)
+}
 
-        label b
+function goodRowsOne(S: Seq[Seq[Int]], k: Int, n: Int): Bool
+    requires squareSeq(S)
+    requires n <= |S|
+{
+    forall i:Int :: { goodRow(S, k, false, i) } |S| - n <= i && i < |S| ==> goodRow(S, k, false, i)
+}
 
-        lemma_two_functions_same(m, fromCol, k, 1, p1 / 4)
+method witness_one(S: Seq[Seq[Int]], k: Int, b: Int, toRow: Int, col: Int) returns (index: Int)
+    requires squareSeq(S)
+    requires col >= 0 && col < |S|
+    requires toRow >= 0 && toRow < |S|
+    
+    requires numbersOfElemsCol(S, col, k, b, toRow) > 0
 
-
-
-        assert numbersOfElemsCol(S, fromCol, k, 0, dd(m)) == old[b](numbersOfElemsCol(S, fromCol, k, 0, dd(m)))
-        assert numbersOfElemsCol(S, fromCol, k, 1, dd(m)) == old[b](numbersOfElemsCol(S, fromCol, k, 1, dd(m)))
-
-        assert old(numbersOfElemsCol(S, fromCol, k, 0, |S| - 1)) == numberOfElemsMulti(repCol(m, 0, fromCol), k, 0)
-        assert old(numbersOfElemsCol(S, fromCol, k, 1, |S| - 1)) == numberOfElemsMulti(repCol(m, 0, fromCol), k, 1)
-
-
-        assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 0) >= n_min_zeros
-        assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 1) >= n_min_ones
-
-        assert 0 <= fromCol
-        assert fromCol <= |S|
-        if (fromCol < |S|) {
-            assert access_column_frac(m, fromCol, p2)
-            assert acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol + 1), p2)
-            assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 0) >= n_min_zeros
-            assert numberOfElemsMulti(repCol(m, 0, fromCol), k, 1) >= n_min_ones
-        }
-
-        fold acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol), p2)
-
+    ensures index >= 0 && index <= toRow
+    ensures bin(S[index][col], k) == b
+{
+    assert b2i(bin(S[toRow][col], k) == b) + numbersOfElemsCol(S, col, k, b, toRow - 1) > 0
+    if (bin(S[toRow][col], k) == b) {
+        index := toRow
     }
     else {
-
-        fold acc(propertyRec(m, n_min_zeros, n_min_ones, k, fromCol), p2)
+        assert numbersOfElemsCol(S, col, k, b, toRow - 1) > 0
+        index := witness_one(S, k, b, toRow - 1, col)
     }
 }
 
-method part1(S: Seq[Seq[Int]], k: Int, p: Perm, p1: Perm, p2: Perm) returns (n_min_zeros: Int, n_min_ones: Int)    
-    requires p1 > none && p2 > none
-    requires access_matrix_frac(m, p1 + p2)
-    requires sortedRows(m)
 
-    ensures access_matrix_frac(m, p1)
-    ensures n_min_zeros + n_min_ones >= (|S| - 1) / 2
-    ensures acc(propertyRec(m, n_min_zeros, n_min_ones, k, 0), p2)
+method part2_aux_ones(S: Seq[Seq[Int]], k: Int, n: Int, toRow: Int)
+    requires squareSeq(S)
+    requires toRow >= 0 && toRow < |S|
+    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 1, toRow) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, toRow) >= n
+    requires sortedCols(S)
+    requires n <= toRow
+    requires goodRowsOne(S, k, |S| - toRow - 1)
+
+    ensures goodRowsOne(S, k, n + (|S| - toRow - 1))
 {
-    n_min_zeros, n_min_ones := proofPart1(m, k, p1)
-    provePropertyRec(m, k, p1, p2, n_min_zeros, n_min_ones, 0)
+    if (n > 0) {
+        var i: Int := 0
+        while (i < |S|)
+            invariant i >= 0 && i <= |S|
+            invariant forall j:Int :: { S[toRow][j] } 0 <= j && j < i ==> S[toRow][j] > k
+        {
+            var index: Int
+            index := witness_one(S, k, 1, toRow, i)
+            assert colSorted(S, i)
+            i := i + 1
+        }
+        var m: Int := toRow - 1
+        i := 0
+        while (i < |S|)
+            invariant i >= 0 && i <= |S|
+            invariant forall col:Int :: { numbersOfElemsCol(S, col, k, 1, m) } col >= 0 && col < i ==> numbersOfElemsCol(S, col, k, 1, m) >= n - 1
+        {
+            assert numbersOfElemsCol(S, i, k, 1, toRow) == (b2i(bin(S[toRow][i], k) == 1) + numbersOfElemsCol(S, i, k, 1, m))
+            i := i + 1
+        }
+        part2_aux_ones(S, k, n - 1, m)
+    }
 }
-*/
+
+method part2(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int)
+    
+    requires squareSeq(S)
+    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_zeros
+    requires forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_ones
+    requires forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 0) >= n_zeros
+    requires forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 1) >= n_ones
+
+    requires sortedCols(S)
+    requires n_zeros <= |S|
+    requires n_ones <= |S|
+
+    ensures goodRowsZero(S, k, n_zeros)
+    ensures goodRowsOne(S, k, n_ones)
+
+
+    //ensures forall i:Int :: {  } i >= 0 && 
+
+    // ensures n_min_zeros good rows on top
+    // ensures n_min_ones good rows on bottom
