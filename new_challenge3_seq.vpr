@@ -208,7 +208,7 @@ method shearsort(n: Int, m: NMatrix)
         assert repSingle(toSeqCol(m, j), 0) == old[before2](repSingle(toSeqCol(m, j), 0))
 
         assume repCol(S1, 0, j) == repCol(S2, 0, j)
-        assume repColSeq(S1, 0, j) == repColSeq(S2, 0, j)
+        assume repCol(S1, 0, j) == repCol(S2, 0, j)
 
     }
 
@@ -288,7 +288,7 @@ method lemma_same_rows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]])
     var n: Int := 0
     while (n < |S1|)
         invariant n >= 0 && n <= |S1|
-        invariant forall i:Int :: { repRowSeq(S1, 0, i) } { repRowSeq(S2, 0, i) } i >= 0 && i < n ==> repRowSeq(S1, 0, i) == repRowSeq(S2, 0, i)
+        invariant forall i:Int :: { repRow(S1, i, 0) } { repRow(S2, i, 0) } i >= 0 && i < n ==> repRow(S1, i, 0) == repRow(S2, i, 0)
     {
         lemma_rep_row_seq_single_same(S1, 0, n)
         lemma_rep_row_seq_single_same(S2, 0, n)
@@ -300,7 +300,7 @@ method lemma_rep_row_seq_single_same(S: Seq[Seq[Int]], fromCol: Int, row: Int)
     requires squareSeq(S)
     requires fromCol >= 0 && fromCol <= |S|
     requires row >= 0 && row < |S|
-    ensures repRowSeq(S, fromCol, row) == repSingle(S[row], fromCol)
+    ensures repRow(S, row, fromCol) == repSingle(S[row], fromCol)
 {
     if (fromCol < |S|) {
         lemma_rep_row_seq_single_same(S, fromCol + 1, row)
@@ -396,8 +396,8 @@ predicate absNumbersOfElemsCol(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: I
 function absNumbersOfElemsMulti(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int): Bool
     requires squareSeq(S)
 {
-    (forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 0) >= n_zeros) &&
-    (forall col:Int :: { repColSeq(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 1) >= n_ones)
+    (forall col:Int :: { repCol(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repCol(S, 0, col), k, 0) >= n_zeros) &&
+    (forall col:Int :: { repCol(S, 0, col) }  col >= 0 && col < |S| ==> numberOfElemsMulti(repCol(S, 0, col), k, 1) >= n_ones)
 
 }
 
@@ -482,8 +482,8 @@ method part2A(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], k: Int, b: Int, n: Int)
 
         lemma_two_functions_same(S1, i, k, b)
         assert numbersOfElemsCol(S1, i, k, b, dd(S1)) >= n
-        assert numbersOfElemsCol(S1, i, k, b, dd(S1)) == numberOfElemsMulti(repColSeq(S1, 0, i), k, b)
-        assert numberOfElemsMulti(repColSeq(S1, 0, i), k, b) == numberOfElemsMulti(repColSeq(S2, 0, i), k, b)
+        assert numbersOfElemsCol(S1, i, k, b, dd(S1)) == numberOfElemsMulti(repCol(S1, 0, i), k, b)
+        assert numberOfElemsMulti(repCol(S1, 0, i), k, b) == numberOfElemsMulti(repCol(S2, 0, i), k, b)
         lemma_two_functions_same(S2, i, k, b)
         assert numbersOfElemsCol(S2, i, k, b, dd(S2)) >= n
         i := i + 1
@@ -515,7 +515,7 @@ method goodRowsStableByRowSort(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], k: Int, n0:
         invariant goodRowsZero(S2, k, j)
     {
         assert goodRow(S1, k, true, j)
-        assert repRowSeq(S1, 0, j) == repRowSeq(S2, 0, j)
+        assert repRow(S1, j, 0) == repRow(S2, j, 0)
         goodRowFromRep(S1, k, true, j, 0)
         goodRowFromRep(S2, k, true, j, 0)
         j := j + 1
@@ -528,7 +528,7 @@ method goodRowsStableByRowSort(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], k: Int, n0:
         invariant goodRowsOne(S2, k, j)
     {
         assert goodRow(S1, k, false, |S1| - j - 1)
-        assert repRowSeq(S1, 0, |S1| - j - 1) == repRowSeq(S2, 0, |S1| - j - 1)
+        assert repRow(S1, |S1| - j - 1, 0) == repRow(S2, |S1| - j - 1, 0)
         goodRowFromRep(S1, k, false, |S1| - j - 1, 0)
         goodRowFromRep(S2, k, false, |S1| - j - 1, 0)
         j := j + 1
@@ -550,7 +550,7 @@ method goodRowFromRep(S: Seq[Seq[Int]], k: Int, zero: Bool, row: Int, fromCol: I
     requires row >= 0 && row < |S|
     requires fromCol >= 0 && fromCol <= |S|
     ensures (forall i:Int :: { S[row][i] } fromCol <= i && i < |S| ==> (good(S[row][i], k, zero))) <==>
-        (forall x:Int :: { good(x, k, zero) } x in toSet(repRowSeq(S, fromCol, row)) ==> good(x, k, zero))
+        (forall x:Int :: { good(x, k, zero) } x in toSet(repRow(S, row, fromCol)) ==> good(x, k, zero))
 {
     if (fromCol < |S|)
     {
@@ -565,9 +565,9 @@ function sameCols(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], from: Int): Bool
     requires squareSeq(S2)
     requires |S1| == |S2|
     requires from >= 0 && from <= |S1|
-    ensures result <==> (forall i:Int :: { repColSeq(S1, 0, i) } { repColSeq(S2, 0, i) } i >= from && i < |S1| ==> repColSeq(S1, 0, i) == repColSeq(S2, 0, i))
+    ensures result <==> (forall i:Int :: { repCol(S1, 0, i) } { repCol(S2, 0, i) } i >= from && i < |S1| ==> repCol(S1, 0, i) == repCol(S2, 0, i))
 {
-    from < |S1| ==> repColSeq(S1, 0, from) == repColSeq(S2, 0, from) && sameCols(S1, S2, from + 1)
+    from < |S1| ==> repCol(S1, 0, from) == repCol(S2, 0, from) && sameCols(S1, S2, from + 1)
 }
 
 function sameRows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]]): Bool
@@ -575,7 +575,7 @@ function sameRows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]]): Bool
     requires squareSeq(S2)
     requires |S1| == |S2|
 {
-    forall i:Int :: { repRowSeq(S1, 0, i) } { repRowSeq(S2, 0, i) } i >= 0 && i < |S1| ==> repRowSeq(S1, 0, i) == repRowSeq(S2, 0, i)
+    forall i:Int :: { repRow(S1, i, 0) } { repRow(S2, i, 0) } i >= 0 && i < |S1| ==> repRow(S1, i, 0) == repRow(S2, i, 0)
 }
 
 
@@ -726,23 +726,6 @@ function numbersOfElemsColInv(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, fromRo
     fromRow == |S| ? 0 : (b2i(bin(S[fromRow][col], k) == b) + numbersOfElemsColInv(S, col, k, b, fromRow + 1))
 }
 
-
-function repColSeq(S: Seq[Seq[Int]], fromRow: Int, col: Int): Multiset[Int]
-    requires squareSeq(S)
-    requires fromRow >= 0 && fromRow <= |S|
-    requires col >= 0 && col < |S|
-{
-    fromRow < |S| ? Multiset(S[fromRow][col]) union repColSeq(S, fromRow + 1, col) : Multiset()
-}
-
-function repRowSeq(S: Seq[Seq[Int]], fromCol: Int, row: Int): Multiset[Int]
-    requires squareSeq(S)
-    requires fromCol >= 0 && fromCol <= |S|
-    requires row >= 0 && row < |S|
-{
-    fromCol < |S| ? Multiset(S[row][fromCol]) union repRowSeq(S, fromCol + 1, row) : Multiset()
-}
-
 function repSingle(S: Seq[Int], from: Int): Multiset[Int]
     requires from >= 0 && from <= |S|
 {
@@ -758,8 +741,8 @@ function repColInv(S: Seq[Seq[Int]], toRow: Int, col: Int): Multiset[Int]
     requires col >= 0 && col < |S|
 
     ensures toRow > 0 ==> (S[toRow - 1][col] in result) >= 1
-    ensures result == repColSeq(S, 0, col) setminus repColSeq(S, toRow, col)
-    ensures repColSeq(S, 0, col) == result union repColSeq(S, toRow, col)
+    ensures result == repCol(S, 0, col) setminus repCol(S, toRow, col)
+    ensures repCol(S, 0, col) == result union repCol(S, toRow, col)
 {
     toRow == 0 ? Multiset() : Multiset(S[toRow - 1][col]) union repColInv(S, toRow - 1, col)
 }
@@ -784,11 +767,11 @@ method lemma_two_functions_same(S: Seq[Seq[Int]], col: Int, k: Int, b: Int)
     requires col >= 0 && col < |S|
 
     
-    ensures numbersOfElemsCol(S, col, k, b, |S| - 1) == numberOfElemsMulti(repColSeq(S, 0, col), k, b)
+    ensures numbersOfElemsCol(S, col, k, b, |S| - 1) == numberOfElemsMulti(repCol(S, 0, col), k, b)
     // repRow(S: Seq[Seq[Int]], row: Int, fromCol: Int): Multiset[Int]
 {
     lemma_two_functions_same_aux(S, col, k, b, |S| - 1)
-    assert repColInv(S, |S|, col) == repColSeq(S, 0, col)
+    assert repColInv(S, |S|, col) == repCol(S, 0, col)
 }
 
 
@@ -851,7 +834,7 @@ method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zero
         invariant forall col:Int :: { numbersOfElemsCol(S, col, k, 0, row) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, row) >= n_min_zeros
         invariant forall col:Int :: { numbersOfElemsCol(S, col, k, 1, row) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, row) >= n_min_ones
 
-//     ensures numbersOfElemsCol(S, col, k, b, |S| - 1) == numberOfElemsMulti(repColSeq(S, 0, col), k, b)
+//     ensures numbersOfElemsCol(S, col, k, b, |S| - 1) == numberOfElemsMulti(repCol(S, 0, col), k, b)
 
     {
         
@@ -921,8 +904,8 @@ method sameAllAux(S: Seq[Seq[Int]], k: Int, b: Int, fromCol: Int)
     requires squareSeq(S)
     requires fromCol >= 0 && fromCol <= |S|
         
-    ensures forall col:Int :: { repColSeq(S, 0, col) } { numbersOfElemsCol(S, col, k, b, dd(S)) }  col >= fromCol && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, b) == numbersOfElemsCol(S, col, k, b, dd(S))
-    //ensures forall col:Int :: { repColSeq(S, 0, col) } { numbersOfElemsCol(S, col, k, 1, dd(S)) }  col >= fromCol && col < |S| ==> numberOfElemsMulti(repColSeq(S, 0, col), k, 1) == numbersOfElemsCol(S, col, k, 1, dd(S))
+    ensures forall col:Int :: { repCol(S, 0, col) } { numbersOfElemsCol(S, col, k, b, dd(S)) }  col >= fromCol && col < |S| ==> numberOfElemsMulti(repCol(S, 0, col), k, b) == numbersOfElemsCol(S, col, k, b, dd(S))
+    //ensures forall col:Int :: { repCol(S, 0, col) } { numbersOfElemsCol(S, col, k, 1, dd(S)) }  col >= fromCol && col < |S| ==> numberOfElemsMulti(repCol(S, 0, col), k, 1) == numbersOfElemsCol(S, col, k, 1, dd(S))
 {
     
     if (fromCol < |S|) {
