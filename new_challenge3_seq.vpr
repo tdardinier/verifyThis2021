@@ -64,8 +64,8 @@ method sort_row(m: NMatrix, row: Int, ascending: Bool)
   requires row >= 0 && row < dim(m)
 
   ensures access_row(m, row)
-  ensures repRow(m, row, 0) == old(repRow(m, row, 0))
-  ensures repRowSeqSingle(toSeqRow(m, row), 0) == old(repRowSeqSingle(toSeqRow(m, row), 0))
+  //ensures repRow(S, row, 0) == old(repRow(S, row, 0))
+  ensures repSingle(toSeqRow(m, row), 0) == old(repSingle(toSeqRow(m, row), 0))
   ensures seqSorted(toSeqRow(m, row), ascending)
   
   //TOSEQ: ensures rowSorted(S, row, even(row))
@@ -77,20 +77,19 @@ method sort_column(m: NMatrix, column: Int)
   requires access_column(m, column)
   requires column >= 0 && column < dim(m)
   ensures access_column(m, column)
-  ensures repCol(m, 0, column) == old(repCol(m, 0, column))
-  ensures toSeqCol(m, column) == old(toSeqCol(m, column))
+  //ensures repCol(S, 0, column) == old(repCol(S, 0, column))
+  ensures repSingle(toSeqCol(m, column), 0) == old(repSingle(toSeqCol(m, column), 0))
   ensures seqSorted(toSeqCol(m, column), true)
 
 method shearsort(n: Int, m: NMatrix)
   requires access_matrix(m)
   requires dim(m) == n
   ensures access_matrix(m)
-  ensures repByRows(m, 0, 0) == old(repByRows(m, 0, 0)) // Permutation
+  ensures repByRows(toSeq(m), 0, 0) == old(repByRows(toSeq(m), 0, 0)) // Permutation
 {
-
-  helper_lemma(m, 0, 1/2)
-
-  assert old(repByRows(m, 0, 0)) == old(repByCols(m, 0, 0))
+  var S0: Seq[Seq[Int]] := toSeq(m)
+  var S: Seq[Seq[Int]] := toSeq(m)
+  helper_lemma(S, 0, 1/2)
 
 
   var k: Int // uninitialised - represents an "arbitrary bound" with respect to sorting properties proven
@@ -99,7 +98,6 @@ method shearsort(n: Int, m: NMatrix)
   var n0: Int := 0
   var n1: Int := 0
 
-  var S: Seq[Seq[Int]] := toSeq(m)
 
   // i < ceil(log2(n)) + 1
   // <=> i < log2(n) + 1
@@ -108,13 +106,13 @@ method shearsort(n: Int, m: NMatrix)
   // <=> two_exponent(i - 1) < n
   // <=> two_exponent(i) < 2*n // avoids evaluating for 
   while (two_exponent(p) < 2*n)
+    invariant squareSeq(S)
     invariant p >= 0
     invariant access_matrix(m)
-    invariant repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
-    invariant repByCols(m, 0, 0) == old(repByCols(m, 0, 0))
+    invariant repByRows(S, 0, 0) == repByRows(S0, 0, 0)
+    invariant repByCols(S, 0, 0) == repByCols(S0, 0, 0)
 
     invariant S == toSeq(m)
-    invariant squareSeq(S)
     invariant n0 >= 0 && n1 >= 0
     invariant n0 + n1 <= |S|
     
@@ -133,18 +131,16 @@ method shearsort(n: Int, m: NMatrix)
 
     // First inner parallel loop
     // Corresponds to forking n threads (per tid instance): the exhales model transfer of heap ownership && value info per thread
-    exhale forall tid:Int :: { repRow(m, tid, 0) } tid >= 0 && tid < n ==> P1(m, tid)
+    exhale forall tid:Int :: { repRow(S, tid, 0) } tid >= 0 && tid < n ==> P1(m, tid)
     // The corresponding loop body is checked in a separate Viper "method" first_inner_loop below
     // Corresponds to joining n threads (per tid instance): the inhales model transfer of heap ownership && value info per thread
-    inhale forall tid:Int :: { repRow(m, tid, 0) } { toSeqRow(m, tid) } {even(tid)} tid >= 0 && tid < n ==> Q1(m, tid, before1)
+    inhale forall tid:Int :: { repRow(S, tid, 0) } { toSeqRow(m, tid) } {even(tid)} tid >= 0 && tid < n ==> Q1(m, tid, before1)
 
 
-// repRowSeqSingle(toSeqRow(m, tid), 0) == old[lab](repRowSeqSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+// repSingle(toSeqRow(m, tid), 0) == old[lab](repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
     
     var S1: Seq[Seq[Int]] := toSeq(m)
     
-    assert forall i:Int :: { S[i] } {S1[i]} i >= 0 && i < dim(m) ==> repRowSeqSingle(S[i], 0) == repRowSeqSingle(S1[i], 0)
-
     lemma_same_rows(S, S1)
     goodRowsStableByRowSort(S, S1, k, n0, n1)
 
@@ -154,147 +150,82 @@ method shearsort(n: Int, m: NMatrix)
 
     m0, m1 := part1(S1, k, n0, n1)
 
-    assert m0 + m1 - (n0 + n1) >= (|S1| - (n0 + n1)) / 2
-    assert absNumbersOfElemsCol(S1, k, m0, m1)
-
-
     // Ghost proof
     var j: Int := n
     while (j > 0)
-        //TOSEQ: invariant sortedRows(m)
         invariant access_matrix_frac(m, 1/2)
         invariant j >= 0 && j <= dim(m)
-        invariant repByRows(m, j, 0) == old[before1](repByRows(m, j, 0))
-        invariant forall i:Int :: { repRow(m, i, 0) } i >= 0 && i < dim(m) ==> repRow(m, i, 0) == old[before1](repRow(m, i, 0))
+        invariant repByRows(S, j, 0) == repByRows(S1, j, 0)
+        invariant forall tid:Int :: { toSeqRow(m, tid) } tid >= 0 && tid < dim(m) ==> repSingle(toSeqRow(m, tid), 0) == old[before1](repSingle(toSeqRow(m, tid), 0))
+        invariant S == old[before1](toSeq(m))
+        invariant S1 == toSeq(m)
     {
         j := j - 1
+        assert repRow(S, j, 0) == repRow(S1, j, 0)
     }
 
     var n_min_zeros: Int
     var n_min_ones: Int
 
+    //assert repByRows(S, 0, 0) == old(repByRows(S, 0, 0))
+    helper_lemma(S1, 0, 1/2)
+    //assert repByCols(S, 0, 0) == old(repByCols(S, 0, 0))
 
-    assert m0 + m1 - (n0 + n1) >= (|S1| - (n0 + n1)) / 2
-    assert m0 <= |S1| && m1 <= |S1|
-
-
-    assert repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
-    helper_lemma(m, 0, 1/2)
-    assert repByCols(m, 0, 0) == old(repByCols(m, 0, 0))
 
     label before2
 
     assert S1 == toSeq(m)
 
     // Second inner parallel loop
-    exhale forall tid:Int :: { repCol(m, 0, tid) } {toSeqCol(m, tid)}  tid >= 0 && tid < n ==> P2(m, tid)
-    inhale forall tid:Int :: { repCol(m, 0, tid) } {toSeqCol(m, tid)} tid >= 0 && tid < n ==> Q2(m, tid, before2)
+    exhale forall tid:Int :: { repCol(S, 0, tid) } {toSeqCol(m, tid)}  tid >= 0 && tid < n ==> P2(m, tid)
+    inhale forall tid:Int :: { repCol(S, 0, tid) } {toSeqCol(m, tid)} tid >= 0 && tid < n ==> Q2(m, tid, before2)
 
-    S := toSeq(m)
-
-    assert S == toSeq(m)
-
-
-    //assert forall i:Int :: {toSeqCol(m, i)} seqSorted(toSeqCol(m, i), true)
-    /*
-    seqSorted(toSeqCol(m, tid), true)
-    */
-
-
-    /* function sortedCols(S: Seq[Seq[Int]]): Bool
-    requires squareSeq(S)
-{
-    forall i:Int :: { colSorted(S, i) } 0 <= i && i < |S| ==> colSorted(S, i)
-}
-*/
-
-
-    assert absNumbersOfElemsCol(S1, k, m0, m1)
-
-
-    /*
-    requires squareSeq(S1) && squareSeq(S2) && |S1| == |S2|
-
-    requires absNumbersOfElemsCol(S1, k, n_zeros, n_ones)
-
-    requires sameCols(S1, S2)
-
-    requires sortedCols(S2)
-    requires n_zeros <= |S1|
-    requires n_ones <= |S1|
-
-    ensures goodRowsOne(S2, k, n_ones)
-    ensures goodRowsZero(S2, k, n_zeros)
-
-    */
+    var S2: Seq[Seq[Int]] := toSeq(m)
 
     // Ghost proof
+
     j := n
     while (j > 0)
         invariant access_matrix_frac(m, 1/2)
         invariant j >= 0 && j <= dim(m)
-        invariant repByCols(m, 0, j) == old[before2](repByCols(m, 0, j))
-        invariant forall i:Int :: { repCol(m, 0, i) } i >= 0 && i < dim(m) ==> repCol(m, 0, i) == old[before2](repCol(m, 0, i))
+        invariant sortedCols(S2, j)
+        invariant sameCols(S1, S2, j)
+        invariant repByCols(S1, 0, j) == repByCols(S2, 0, j)
 
-        //invariant forall i:Int :: { repColSeq(S1, 0, i) } { repColSeq(S, 0, i) } i >= j && i < |S1| ==> repColSeq(S1, 0, i) == repColSeq(S, 0, i)
-        //invariant forall i:Int :: { colSorted(S, i) } i >= j && i < |S| ==> colSorted(S, i)
-        invariant sortedCols(S, j)
-        invariant sameCols(S1, S, j)
+        invariant forall tid:Int :: { toSeqCol(m, tid) } tid >= 0 && tid < dim(m) ==> repSingle(toSeqCol(m, tid), 0) == old[before2](repSingle(toSeqCol(m, tid), 0))
+        
+        invariant forall tid:Int :: { toSeqCol(m, tid) } tid >= 0 && tid < dim(m) ==> seqSorted(toSeqCol(m, tid), true)
+
+        invariant S1 == old[before2](toSeq(m))
+        invariant S2 == toSeq(m)
 
 
     {
         j := j - 1
         assert seqSorted(toSeqCol(m, j), true)
-        assume colSorted(S, j)
-        assume repColSeq(S1, 0, j) == repColSeq(S, 0, j)
+        assert colSorted(S2, j)
+
+        assert repSingle(toSeqCol(m, j), 0) == old[before2](repSingle(toSeqCol(m, j), 0))
+
+        assume repCol(S1, 0, j) == repCol(S2, 0, j)
+        assume repColSeq(S1, 0, j) == repColSeq(S2, 0, j)
+
     }
 
-        assume false
-
-
-    assert sameCols(S1, S, 0) && sortedCols(S, 0)
-
-    part2(S1, S, k, m0, m1)
-
-    assert n0 >= 0 && n1 >= 0
-    assert n0 + n1 <= |S|
-    
-    assert goodRowsZero(S, k, n0)
-    assert goodRowsOne(S, k, n1)
-
-    assert S == toSeq(m)
-
-    helper_lemma(m, 0, 1/2)
-    assert S == toSeq(m)
+    part2(S1, S2, k, m0, m1)
+    helper_lemma(S2, 0, 1/2)
 
     p := p + 1
-    assert p >= 0
-    assert access_matrix(m)
-    assert S == toSeq(m)
-    assert squareSeq(S)
+    S := S2
 
-    assume false
+    assert m0 + m1 - (n0 + n1) >= (|S| - (n0 + n1)) / 2
+    // TODO: Prove stuff
 
-//     ensures repByCols(m, fromRow, 0) == repByRows(m, fromRow, 0)
-    assert repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
-    assert repByCols(m, 0, 0) == old(repByCols(m, 0, 0))
-
-assume false
-
-
-assume false
-
-    assert repByRows(m, 0, 0) == old(repByRows(m, 0, 0))
-    assert repByCols(m, 0, 0) == old(repByCols(m, 0, 0))
-
-
-
-
-
-
-    assume false
 
   }
+
+    assert S0 == old(toSeq(m))
+
 }
 
 method allocMatrix(d:Int) returns (m: NMatrix)
@@ -313,25 +244,26 @@ function two_exponent(n: Int): Int
 // Parallel loops
 
 define P1(m, tid) access_row(m, tid) && tid >= 0 && tid < dim(m)
-define Q1(m, tid, lab) access_row(m, tid) && repRow(m, tid, 0) == old[lab](repRow(m, tid, 0)) && repRowSeqSingle(toSeqRow(m, tid), 0) == old[lab](repRowSeqSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+define Q1(m, tid, lab) access_row(m, tid) && repSingle(toSeqRow(m, tid), 0) == old[lab](repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
 
 //TOSEQ:  && rowSorted(S, tid, even(tid))
 
 method first_inner_loop(m: NMatrix, tid: Int)
   requires P1(m, tid)
-  ensures access_row(m, tid) && repRow(m, tid, 0) == old(repRow(m, tid, 0)) && repRowSeqSingle(toSeqRow(m, tid), 0) == old(repRowSeqSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+  //ensures access_row(m, tid) && repRow(S, tid, 0) == old(repRow(S, tid, 0)) && repSingle(toSeqRow(m, tid), 0) == old(repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+  ensures access_row(m, tid) && repSingle(toSeqRow(m, tid), 0) == old(repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
   //TOSEQ:  && rowSorted(S, tid, even(tid))
 {
   sort_row(m, tid, even(tid))
 }
 
 define P2(m, tid) access_column(m, tid) && tid >= 0 && tid < dim(m)
-define Q2(m, tid, lab) access_column(m, tid) && repCol(m, 0, tid) == old[lab](repCol(m, 0, tid)) && seqSorted(toSeqCol(m, tid), true)
+define Q2(m, tid, lab) access_column(m, tid) && repSingle(toSeqCol(m, tid), 0) == old[lab](repSingle(toSeqCol(m, tid), 0)) && seqSorted(toSeqCol(m, tid), true)
 
 
 method second_inner_loop(m: NMatrix, tid: Int)
   requires P2(m, tid)
-  ensures access_column(m, tid) && repCol(m, 0, tid) == old(repCol(m, 0, tid)) && seqSorted(toSeqCol(m, tid), true)
+  ensures access_column(m, tid) && repSingle(toSeqCol(m, tid), 0) == old(repSingle(toSeqCol(m, tid), 0)) && seqSorted(toSeqCol(m, tid), true)
 {
   sort_column(m, tid)
 }
@@ -350,7 +282,7 @@ method second_inner_loop(m: NMatrix, tid: Int)
 
 method lemma_same_rows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]])
     requires squareSeq(S1) && squareSeq(S2) && |S1| == |S2|
-    requires forall i:Int :: { S1[i] } {S2[i]} i >= 0 && i < |S1| ==> repRowSeqSingle(S1[i], 0) == repRowSeqSingle(S2[i], 0)
+    requires forall i:Int :: { S1[i] } {S2[i]} i >= 0 && i < |S1| ==> repSingle(S1[i], 0) == repSingle(S2[i], 0)
     ensures sameRows(S1, S2)
 {
     var n: Int := 0
@@ -368,7 +300,7 @@ method lemma_rep_row_seq_single_same(S: Seq[Seq[Int]], fromCol: Int, row: Int)
     requires squareSeq(S)
     requires fromCol >= 0 && fromCol <= |S|
     requires row >= 0 && row < |S|
-    ensures repRowSeq(S, fromCol, row) == repRowSeqSingle(S[row], fromCol)
+    ensures repRowSeq(S, fromCol, row) == repSingle(S[row], fromCol)
 {
     if (fromCol < |S|) {
         lemma_rep_row_seq_single_same(S, fromCol + 1, row)
@@ -388,62 +320,61 @@ define access_column(m, col) forall i:Int :: {slot(m,i,col)} 0 <= i && i < dim(m
 define access_column_frac(m, col, p) forall i:Int :: {slot(m,i,col)} 0 <= i && i < dim(m) ==> acc(slot(m,i,col).val, p)
 
 
-function repRow(m: NMatrix, row: Int, fromCol: Int): Multiset[Int]
-    requires forall j:Int :: {slot(m, row, j)} fromCol <= j && j < dim(m) ==> acc(slot(m, row, j).val, wildcard)
-    requires fromCol >= 0 && fromCol <= dim(m)
-    requires row >= 0 && row < dim(m)
+function repRow(S: Seq[Seq[Int]], row: Int, fromCol: Int): Multiset[Int]
+    requires squareSeq(S)
+    requires fromCol >= 0 && fromCol <= |S|
+    requires row >= 0 && row < |S|
+    ensures result == repSingle(S[row], fromCol)
 {
-    fromCol < dim(m) ? Multiset(M(row, fromCol)) union repRow(m, row, fromCol + 1) : Multiset()
+    fromCol < |S| ? Multiset(S[row][fromCol]) union repRow(S, row, fromCol + 1) : Multiset()
 }
 
-function repByRows(m: NMatrix, fromRow: Int, fromCol: Int): Multiset[Int]
-    requires forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, wildcard)
-    requires fromCol >= 0 && fromCol <= dim(m)
-    requires fromRow >= 0 && fromRow <= dim(m)
+function repByRows(S: Seq[Seq[Int]], fromRow: Int, fromCol: Int): Multiset[Int]
+    requires squareSeq(S)
+    requires fromCol >= 0 && fromCol <= |S|
+    requires fromRow >= 0 && fromRow <= |S|
 {
-    fromRow < dim(m) ? repRow(m, fromRow, fromCol) union repByRows(m, fromRow + 1, fromCol) : Multiset()
+    fromRow < |S| ? repRow(S, fromRow, fromCol) union repByRows(S, fromRow + 1, fromCol) : Multiset()
 }
 
-function repCol(m: NMatrix, fromRow: Int, col: Int): Multiset[Int]
-    requires forall i:Int :: {slot(m, i, col)} fromRow <= i && i < dim(m) ==> acc(slot(m, i, col).val, wildcard)
-    requires fromRow >= 0 && fromRow <= dim(m)
-    requires col >= 0 && col < dim(m)
+function repCol(S: Seq[Seq[Int]], fromRow: Int, col: Int): Multiset[Int]
+    requires squareSeq(S)
+    requires fromRow >= 0 && fromRow <= |S|
+    requires col >= 0 && col < |S|
 {
-    fromRow < dim(m) ? Multiset(M(fromRow, col)) union repCol(m, fromRow + 1, col) : Multiset()
+    fromRow < |S| ? Multiset(S[fromRow][col]) union repCol(S, fromRow + 1, col) : Multiset()
 }
 
-function repByCols(m: NMatrix, fromRow: Int, fromCol: Int): Multiset[Int]
-    requires forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, wildcard)
-    requires fromCol >= 0 && fromCol <= dim(m)
-    requires fromRow >= 0 && fromRow <= dim(m)
-    ensures fromRow == dim(m) ==> result == Multiset()
+function repByCols(S: Seq[Seq[Int]], fromRow: Int, fromCol: Int): Multiset[Int]
+    requires squareSeq(S)
+    requires fromCol >= 0 && fromCol <= |S|
+    requires fromRow >= 0 && fromRow <= |S|
+    ensures fromRow == |S| ==> result == Multiset()
 {
-    fromCol < dim(m) ? repCol(m, fromRow, fromCol) union repByCols(m, fromRow, fromCol + 1) : Multiset()
+    fromCol < |S| ? repCol(S, fromRow, fromCol) union repByCols(S, fromRow, fromCol + 1) : Multiset()
 }
 
-method helper_lemma(m: NMatrix, fromRow: Int, p: Perm)
+method helper_lemma(S: Seq[Seq[Int]], fromRow: Int, p: Perm)
     requires p > none
-    requires forall i: Int, j:Int :: {slot(m, i, j)} 0 <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
-    requires fromRow >= 0 && fromRow <= dim(m)
-    ensures forall i: Int, j:Int :: {slot(m, i, j)} 0 <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
-    ensures repByCols(m, fromRow, 0) == repByRows(m, fromRow, 0)
+    requires squareSeq(S)
+    requires fromRow >= 0 && fromRow <= |S|
+    ensures repByCols(S, fromRow, 0) == repByRows(S, fromRow, 0)
 {
-    if (fromRow < dim(m)) {
-        helper_lemma(m, fromRow + 1, p / 2)
-        helper_lemma2(m, fromRow, 0, p / 2)
+    if (fromRow < |S|) {
+        helper_lemma(S, fromRow + 1, p / 2)
+        helper_lemma2(S, fromRow, 0, p / 2)
     }
 }
 
-method helper_lemma2(m: NMatrix, fromRow: Int, fromCol: Int, p: Perm)
+method helper_lemma2(S: Seq[Seq[Int]], fromRow: Int, fromCol: Int, p: Perm)
     requires p > none
-    requires forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
-    requires fromRow >= 0 && fromRow < dim(m)
-    requires fromCol >= 0 && fromCol <= dim(m)
-    ensures forall i: Int, j:Int :: {slot(m, i, j)} fromCol <= j && j < dim(m) && fromRow <= i && i < dim(m) ==> acc(slot(m, i, j).val, p)
-    ensures repByCols(m, fromRow, fromCol) == repRow(m, fromRow, fromCol) union repByCols(m, fromRow + 1, fromCol)
+    requires squareSeq(S)
+    requires fromRow >= 0 && fromRow < |S|
+    requires fromCol >= 0 && fromCol <= |S|
+    ensures repByCols(S, fromRow, fromCol) == repRow(S, fromRow, fromCol) union repByCols(S, fromRow + 1, fromCol)
 {
-    if (fromCol < dim(m)) {
-        helper_lemma2(m, fromRow, fromCol + 1, p / 2)
+    if (fromCol < |S|) {
+        helper_lemma2(S, fromRow, fromCol + 1, p / 2)
     }
 }
 
@@ -654,15 +585,6 @@ function sameRows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]]): Bool
 
 // Second part: Sortedness
 
-/*
-function asColRowSeqSeq(m: NMatrix) : Seq[Seq[Int]]
-    requires access_matrix_frac(m, wildcard)
-    ensures |result| == dim(m) && (forall col:Int , row: Int :: {result[col][row]}{M(row,col)} 0 <= col && col < dim(m) ==> 
-      |result[col]| == dim(m) && (0 <= row && row < dim(m) ==> result[col][row] == M(row,col)))
-// easy to implement if needed
-*/
-
-
 define squareSeq(S) forall i:Int :: { S[i] } i >= 0 && i < |S| ==> |S[i]| == |S|
 
 function rowSorted(S: Seq[Seq[Int]], row: Int, ascending: Bool): Bool
@@ -821,10 +743,10 @@ function repRowSeq(S: Seq[Seq[Int]], fromCol: Int, row: Int): Multiset[Int]
     fromCol < |S| ? Multiset(S[row][fromCol]) union repRowSeq(S, fromCol + 1, row) : Multiset()
 }
 
-function repRowSeqSingle(S: Seq[Int], fromCol: Int): Multiset[Int]
-    requires fromCol >= 0 && fromCol <= |S|
+function repSingle(S: Seq[Int], from: Int): Multiset[Int]
+    requires from >= 0 && from <= |S|
 {
-    fromCol < |S| ? Multiset(S[fromCol]) union repRowSeqSingle(S, fromCol + 1) : Multiset()
+    from < |S| ? Multiset(S[from]) union repSingle(S, from + 1) : Multiset()
 }
 
 
