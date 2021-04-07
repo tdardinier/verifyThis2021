@@ -51,6 +51,11 @@ function toSeq(m: NMatrix) : Seq[Seq[Int]]
     ensures |result| == dim(m) && (forall row:Int :: {result[row]} 0 <= row && row < dim(m) ==> 
       result[row] == toSeqRow(m, row))
 
+    ensures |result| == dim(m) && (forall col:Int :: {projectCol(result, col)} 0 <= col && col < dim(m) ==> 
+      projectCol(result, col) == toSeqCol(m, col))
+
+
+
 
 // easy to implement if needed
 
@@ -167,10 +172,7 @@ method shearsort(n: Int, m: NMatrix)
     var n_min_zeros: Int
     var n_min_ones: Int
 
-    //assert repByRows(S, 0, 0) == old(repByRows(S, 0, 0))
     helper_lemma(S1, 0, 1/2)
-    //assert repByCols(S, 0, 0) == old(repByCols(S, 0, 0))
-
 
     label before2
 
@@ -204,12 +206,10 @@ method shearsort(n: Int, m: NMatrix)
         j := j - 1
         assert seqSorted(toSeqCol(m, j), true)
         assert colSorted(S2, j)
-
         assert repSingle(toSeqCol(m, j), 0) == old[before2](repSingle(toSeqCol(m, j), 0))
-
-        assume repCol(S1, 0, j) == repCol(S2, 0, j)
-        assume repCol(S1, 0, j) == repCol(S2, 0, j)
-
+        assert repSingle(old[before2](toSeqCol(m, j)), 0) == repCol(S1, 0, j)
+        assert repSingle(toSeqCol(m, j), 0) == repCol(S2, 0, j)
+        assert repCol(S1, 0, j) == repCol(S2, 0, j)
     }
 
     part2(S1, S2, k, m0, m1)
@@ -268,16 +268,6 @@ method second_inner_loop(m: NMatrix, tid: Int)
   sort_column(m, tid)
 }
 
-
-
-
-
-
-
-
-
-
-
 // Specifications
 
 method lemma_same_rows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]])
@@ -319,7 +309,6 @@ define access_row_frac(m, row, p) forall j:Int :: {slot(m, row,j)} 0 <= j && j <
 define access_column(m, col) forall i:Int :: {slot(m,i,col)} 0 <= i && i < dim(m) ==> acc(slot(m,i,col).val)
 define access_column_frac(m, col, p) forall i:Int :: {slot(m,i,col)} 0 <= i && i < dim(m) ==> acc(slot(m,i,col).val, p)
 
-
 function repRow(S: Seq[Seq[Int]], row: Int, fromCol: Int): Multiset[Int]
     requires squareSeq(S)
     requires fromCol >= 0 && fromCol <= |S|
@@ -337,10 +326,19 @@ function repByRows(S: Seq[Seq[Int]], fromRow: Int, fromCol: Int): Multiset[Int]
     fromRow < |S| ? repRow(S, fromRow, fromCol) union repByRows(S, fromRow + 1, fromCol) : Multiset()
 }
 
+function projectCol(S: Seq[Seq[Int]], col: Int): Seq[Int]
+    requires squareSeq(S)
+    requires col >= 0 && col < |S|
+    ensures |result| == |S|
+    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i < |result| ==> result[i] == S[i][col]
+
 function repCol(S: Seq[Seq[Int]], fromRow: Int, col: Int): Multiset[Int]
     requires squareSeq(S)
     requires fromRow >= 0 && fromRow <= |S|
     requires col >= 0 && col < |S|
+
+    ensures result == repSingle(projectCol(S, col), fromRow)
+
 {
     fromRow < |S| ? Multiset(S[fromRow][col]) union repCol(S, fromRow + 1, col) : Multiset()
 }
