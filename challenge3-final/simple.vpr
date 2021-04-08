@@ -1,0 +1,137 @@
+function divide_exponent(x: Int, n: Int): Int
+    requires n >= 0 && x >= 0
+    ensures result >= 0
+{
+    n == 0 ? x : divide_exponent(x, n - 1) - divide_exponent(x, n - 1) / 2
+}
+
+// two_exponent(p) >= 2 * n
+
+method bounds_for_divide_exponent(x: Int, n: Int)
+    requires n >= 0 && x > 0
+    ensures divide_exponent(x, n) * two_exponent(n) <= x
+    ensures divide_exponent(x, n) * two_exponent(n + 1) > x
+{
+    if (n == 0) {
+
+        assert divide_exponent(x, n) == x
+        assert two_exponent(n) == 1
+        assert two_exponent(n + 1) == 2
+
+    }
+    else {
+        bounds_for_divide_exponent(x, n - 1)
+        assume false
+    }
+}
+
+method smaller_than_one(n: Int, p: Int)
+    requires n > 0
+    requires two_exponent(p) >= n
+    ensures divide_exponent(n, p) <= 1
+{
+    bounds_for_divide_exponent(n, p)
+}
+
+function trigger(k: Int): Bool
+    ensures result
+
+define P(k) exists n0:Int, n1:Int :: n0 >= 0 && n1 >= 0 && n0 + n1 >= |S| - 1 && n0 + n1 <= |S| && goodRowsZero(S, k, n0) && goodRowsOne(S, k, n1)
+
+function sorted(S: Seq[Seq[Int]]): Bool
+    requires squareSeq(S)
+{
+    forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 < |S| && i2 >= 0 && i2 < |S| && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
+        ==>
+        (i1 > i2 ==> S[i1][j1] >= S[i2][j2])
+        && (i1 == i2 && j1 > j2 ==> (even(i1) ? S[i1][j1] >= S[i2][j2] : S[i1][j1] <= S[i2][j2] ))
+}
+
+predicate forallk(S: Seq[Seq[Int]])
+{
+    squareSeq(S) && forall k:Int :: { trigger(k) } P(k)
+}
+
+method finish_proof(S: Seq[Seq[Int]])
+    requires squareSeq(S)
+    requires forallk(S)
+    requires sortedRows(S)
+
+    ensures sorted(S)
+{
+    assert forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 < |S| && i2 >= 0 && i2 < |S| && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
+        ==>
+        (i1 == i2 && j1 > j2 ==> (even(i1) ? S[i1][j1] >= S[i2][j2] : S[i1][j1] <= S[i2][j2] ))
+    assert forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } {helper_prover(S, i2, j2, i1, j1)} i1 >= 0 && i1 < |S| && i2 >= 0 && i2 < |S| && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
+        ==>
+        (i1 > i2 ==> helper_prover(S, i2, j2, i1, j1))
+
+
+}
+
+function helper_prover(S: Seq[Seq[Int]], srow: Int, scol: Int, brow: Int, bcol: Int): Bool
+    requires squareSeq(S)
+    requires srow >= 0 && srow < |S|
+    requires scol >= 0 && scol < |S|
+
+    requires brow >= 0 && brow < |S|
+    requires bcol >= 0 && bcol < |S|
+
+    requires brow > srow
+    requires forallk(S)
+
+    ensures result
+
+{
+    unfolding forallk(S) in (trigger( S[brow][bcol]) && !goodRow(S, S[brow][bcol], false, brow) && goodRow(S, S[brow][bcol], true, srow) && S[srow][scol] <= S[brow][bcol])
+}
+
+function two_exponent(n: Int): Int
+    ensures n >= 0 ==> result >= 1
+    ensures n > 0 ==> result == 2 * two_exponent(n-1)
+    ensures n < 0 ==> result == 0
+{
+    n > 0 ? 2 * two_exponent(n - 1) : (n == 0 ? 1 : 0)
+}
+
+define squareSeq(S) forall i:Int :: { S[i] } i >= 0 && i < |S| ==> |S[i]| == |S|
+
+function rowSorted(S: Seq[Seq[Int]], row: Int, ascending: Bool): Bool
+    requires row >= 0 && row < |S|
+    requires squareSeq(S)
+{
+    forall i:Int, j:Int :: { S[row][i], S[row][j] } 0 <= i && i < j && j < |S| ==> (ascending ? S[row][i] <= S[row][j] : S[row][j] <= S[row][i])
+}
+
+function sortedRows(S: Seq[Seq[Int]]): Bool
+    requires squareSeq(S)
+{
+    forall i:Int :: { even(i) } 0 <= i && i < |S| ==> rowSorted(S, i, even(i))
+}
+
+
+function even(i: Int): Bool
+{
+    i % 2 == 0
+}
+
+function goodRow(S: Seq[Seq[Int]], k: Int, zero: Bool, row: Int): Bool
+    requires squareSeq(S)
+    requires row >= 0 && row < |S|
+{
+    forall i:Int :: { S[row][i] } 0 <= i && i < |S| ==> (zero ? S[row][i] <= k : S[row][i] > k)
+}
+
+function goodRowsZero(S: Seq[Seq[Int]], k: Int, n: Int): Bool
+    requires squareSeq(S)
+    requires n <= |S|
+{
+    forall i:Int :: { goodRow(S, k, true, i) } 0 <= i && i < n ==> goodRow(S, k, true, i)
+}
+
+function goodRowsOne(S: Seq[Seq[Int]], k: Int, n: Int): Bool
+    requires squareSeq(S)
+    requires n <= |S|
+{
+    forall i:Int :: { goodRow(S, k, false, i) } |S| - n <= i && i < |S| ==> goodRow(S, k, false, i)
+}

@@ -1,4 +1,5 @@
 import <decreases/int.vpr>
+import "simple.vpr"
 
 // Tasks completed: 1 and 2
 
@@ -86,14 +87,18 @@ method sort_column(m: NMatrix, column: Int)
   ensures repSingle(toSeqCol(m, column), 0) == old(repSingle(toSeqCol(m, column), 0))
   ensures seqSorted(toSeqCol(m, column), true)
 
+/*
 method shearsort(n: Int, m: NMatrix)
   requires access_matrix(m)
   requires dim(m) == n
   ensures access_matrix(m)
   ensures repByRows(toSeq(m), 0, 0) == old(repByRows(toSeq(m), 0, 0)) // Permutation
 {
+    assume false
+
+
   var S0: Seq[Seq[Int]] := toSeq(m)
-  var S: Seq[Seq[Int]] := toSeq(m)
+  var S: Seq[Seq[Int]] := S0
   helper_lemma(S, 0, 1/2)
 
 
@@ -123,6 +128,13 @@ method shearsort(n: Int, m: NMatrix)
     
     invariant goodRowsZero(S, k, n0)
     invariant goodRowsOne(S, k, n1)
+
+    //invariant p >= 1 ==> (|S| - (n0 + n1)) <= divide_exponent(|S|, p - 1)
+
+
+    //invariant two_exponent(p) * (|S| - (n0 + n1)) <= |S|
+
+    //invariant two_exponent(p + 1) * (|S| - (n0 + n1)) > |S|
 
 
     decreases 2*n - two_exponent(p) // task 1: Termination (memory safety is implicit with permissions)
@@ -167,10 +179,8 @@ method shearsort(n: Int, m: NMatrix)
     {
         j := j - 1
         assert repRow(S, j, 0) == repRow(S1, j, 0)
+        assume false
     }
-
-    var n_min_zeros: Int
-    var n_min_ones: Int
 
     helper_lemma(S1, 0, 1/2)
 
@@ -185,6 +195,14 @@ method shearsort(n: Int, m: NMatrix)
     var S2: Seq[Seq[Int]] := toSeq(m)
 
     // Ghost proof
+
+
+    assert m0 + m1 - (n0 + n1) >= (|S| - (n0 + n1)) / 2
+
+    assert p >= 1 ==> (|S| - (n0 + n1)) <= divide_exponent(|S|, p - 1)
+
+
+    assume false
 
     j := n
     while (j > 0)
@@ -210,7 +228,16 @@ method shearsort(n: Int, m: NMatrix)
         assert repSingle(old[before2](toSeqCol(m, j)), 0) == repCol(S1, 0, j)
         assert repSingle(toSeqCol(m, j), 0) == repCol(S2, 0, j)
         assert repCol(S1, 0, j) == repCol(S2, 0, j)
+        assume false
     }
+
+    assume squareSeq(S1) && squareSeq(S2) && |S1| == |S2|
+    assume absNumbersOfElemsCol(S1, k, m0, m1)
+    assume sameCols(S1, S2, 0)
+    assume sortedCols(S2, 0)
+    assume m0 <= |S1|
+    assume m1 <= |S1|
+
 
     part2(S1, S2, k, m0, m1)
     helper_lemma(S2, 0, 1/2)
@@ -221,25 +248,22 @@ method shearsort(n: Int, m: NMatrix)
     assert m0 + m1 - (n0 + n1) >= (|S| - (n0 + n1)) / 2
     // TODO: Prove stuff
 
+    n0 := m0
+    n1 := m1
+
 
   }
 
     assert S0 == old(toSeq(m))
 
 }
+*/
 
 method allocMatrix(d:Int) returns (m: NMatrix)
   requires d >= 0
   ensures dim(m) == d
   ensures access_matrix(m)
 
-function two_exponent(n: Int): Int
-    ensures n >= 0 ==> result >= 1
-    ensures n > 0 ==> result == 2 * two_exponent(n-1)
-    ensures n < 0 ==> result == 0
-{
-    n > 0 ? 2 * two_exponent(n - 1) : (n == 0 ? 1 : 0)
-}
 
 // Parallel loops
 
@@ -377,16 +401,11 @@ method helper_lemma2(S: Seq[Seq[Int]], fromRow: Int, fromCol: Int, p: Perm)
 }
 
 
-function even(i: Int): Bool
-{
-    i % 2 == 0
-}
-
 
 // Abstraction for better automation
-predicate absNumbersOfElemsCol(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int)
+function absNumbersOfElemsCol(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int): Bool
+    requires squareSeq(S)
 {
-    squareSeq(S) &&
     (forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_zeros) &&
     (forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_ones)
 }
@@ -415,13 +434,13 @@ method part1(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zeros: I
 
     ensures n_min_zeros + n_min_ones - (n0 + n1) >= (|S| - (n0 + n1)) / 2
     ensures absNumbersOfElemsCol(S, k, n_min_zeros, n_min_ones)
-    ensures n_min_zeros <= |S| && n_min_ones <= |S|
+    ensures n_min_zeros + n_min_ones <= |S|
+    ensures n_min_zeros >= 0 && n_min_ones >= 0
 
 {
     n_min_zeros, n_min_ones := part1_aux(S, k, n0, n1)
     sameAllAux(S, k, 0, 0)
     sameAllAux(S, k, 1, 0)
-    fold absNumbersOfElemsCol(S, k, n_min_zeros, n_min_ones)
 }
 
 method part2(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int)
@@ -440,8 +459,6 @@ method part2(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones:
     ensures goodRowsZero(S2, k, n_zeros)
 
 {
-    unfold absNumbersOfElemsCol(S1, k, n_zeros, n_ones)
-
     part2A(S1, S2, k, 0, n_zeros)
     part2A(S1, S2, k, 1, n_ones)
 
@@ -583,25 +600,10 @@ function sameRows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]]): Bool
 
 // Second part: Sortedness
 
-define squareSeq(S) forall i:Int :: { S[i] } i >= 0 && i < |S| ==> |S[i]| == |S|
-
-function rowSorted(S: Seq[Seq[Int]], row: Int, ascending: Bool): Bool
-    requires row >= 0 && row < |S|
-    requires squareSeq(S)
-{
-    forall i:Int, j:Int :: { S[row][i], S[row][j] } 0 <= i && i < j && j < |S| ==> (ascending ? S[row][i] <= S[row][j] : S[row][j] <= S[row][i])
-}
 
 function seqSorted(S: Seq[Int], ascending: Bool): Bool
 {
     forall i:Int, j:Int :: { S[i], S[j] } 0 <= i && i < j && j < |S| ==> (ascending ? S[i] <= S[j] : S[j] <= S[i])
-}
-
-
-function sortedRows(S: Seq[Seq[Int]]): Bool
-    requires squareSeq(S)
-{
-    forall i:Int :: { even(i) } 0 <= i && i < |S| ==> rowSorted(S, i, even(i))
 }
 
 function bin(x: Int, k: Int): Int
@@ -794,7 +796,12 @@ method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zero
     ensures n_min_zeros + n_min_ones - (n0 + n1) >= (|S| - (n0 + n1)) / 2
     ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 0, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, dd(S)) >= n_min_zeros
     ensures forall col:Int :: { numbersOfElemsCol(S, col, k, 1, dd(S)) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, dd(S)) >= n_min_ones
-    ensures n_min_zeros <= |S| && n_min_ones <= |S|
+    //ensures n_min_zeros <= |S| && n_min_ones <= |S|
+
+    ensures n_min_zeros >= 0 && n_min_ones >= 0
+    ensures n_min_zeros + n_min_ones <= |S|
+
+
 {
 
     n_min_zeros := 0
@@ -802,10 +809,18 @@ method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zero
 
     var row: Int := -1
     while (n_min_zeros < n0)
-        invariant n_min_zeros >= 0 && n_min_zeros <= n0
+        invariant n_min_zeros >= 0
+        invariant n_min_ones >= 0
+        invariant n_min_zeros + n_min_ones <= n0
+
         invariant row == n_min_zeros - 1
         invariant forall col:Int :: { numbersOfElemsCol(S, col, k, 0, row) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, row) >= n_min_zeros
         invariant n_min_zeros <= row + 1 && n_min_ones == 0
+
+        invariant n_min_zeros >= 0 && n_min_ones >= 0
+        invariant n_min_zeros + n_min_ones <= row + 1
+
+
     {
         assert forall col:Int :: { numbersOfElemsCol(S, col, k, 0, n_min_zeros) } col >= 0 && col < |S| ==>
             numbersOfElemsCol(S, col, k, 0, n_min_zeros) == b2i(bin(S[n_min_zeros][col], k) == 0) + numbersOfElemsCol(S, col, k, 0, row)
@@ -827,12 +842,17 @@ method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zero
         invariant row % 2 == mod
         invariant row >= -1 && row < |S| - n1
         invariant n_min_zeros <= row + 1 && n_min_ones <= row + 1
+        invariant n_min_zeros >= 0 && n_min_ones >= 0
 
         invariant n_min_zeros + n_min_ones - n0 >= (row + 1 - n0) / 2
         invariant forall col:Int :: { numbersOfElemsCol(S, col, k, 0, row) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 0, row) >= n_min_zeros
         invariant forall col:Int :: { numbersOfElemsCol(S, col, k, 1, row) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, row) >= n_min_ones
 
 //     ensures numbersOfElemsCol(S, col, k, b, |S| - 1) == numberOfElemsMulti(repCol(S, 0, col), k, b)
+
+        invariant n_min_zeros >= 0 && n_min_ones >= 0
+        invariant n_min_zeros + n_min_ones <= row + 1
+
 
     {
         
@@ -884,6 +904,12 @@ method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zero
         invariant forall col:Int :: { numbersOfElemsCol(S, col, k, 1, row) } col >= 0 && col < |S| ==> numbersOfElemsCol(S, col, k, 1, row) >= n_min_ones
         
         invariant n_min_zeros <= row + 1 && n_min_ones <= row + 1
+        invariant n_min_zeros >= 0 && n_min_ones >= 0
+
+
+        invariant n_min_zeros >= 0 && n_min_ones >= 0
+        invariant n_min_zeros + n_min_ones <= row + 1
+
 
 
     {
@@ -928,27 +954,6 @@ function sortedCols(S: Seq[Seq[Int]], from: Int): Bool
     ensures result <==> (forall i:Int :: { colSorted(S, i) } from <= i && i < |S| ==> colSorted(S, i))
 {
     from < |S| ==> colSorted(S, from) && sortedCols(S, from + 1)
-}
-
-function goodRow(S: Seq[Seq[Int]], k: Int, zero: Bool, row: Int): Bool
-    requires squareSeq(S)
-    requires row >= 0 && row < |S|
-{
-    forall i:Int :: { S[row][i] } 0 <= i && i < |S| ==> (zero ? S[row][i] <= k : S[row][i] > k)
-}
-
-function goodRowsZero(S: Seq[Seq[Int]], k: Int, n: Int): Bool
-    requires squareSeq(S)
-    requires n <= |S|
-{
-    forall i:Int :: { goodRow(S, k, true, i) } 0 <= i && i < n ==> goodRow(S, k, true, i)
-}
-
-function goodRowsOne(S: Seq[Seq[Int]], k: Int, n: Int): Bool
-    requires squareSeq(S)
-    requires n <= |S|
-{
-    forall i:Int :: { goodRow(S, k, false, i) } |S| - n <= i && i < |S| ==> goodRow(S, k, false, i)
 }
 
 method witness_one(S: Seq[Seq[Int]], k: Int, b: Int, toRow: Int, col: Int) returns (index: Int)
