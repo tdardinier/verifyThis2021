@@ -228,7 +228,29 @@ method helper_lemma2(S: Seq[Seq[Int]], fromRow: Int, fromCol: Int, p: Perm)
     }
 }
 
+function repSingle(S: Seq[Int], from: Int): Multiset[Int]
+    requires from >= 0 && from <= |S|
+{
+    from < |S| ? Multiset(S[from]) union repSingle(S, from + 1) : Multiset()
+}
 
+
+
+function sameRows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]]): Bool
+    requires squareSeq(S1)
+    requires squareSeq(S2)
+    requires |S1| == |S2|
+{
+    forall i:Int :: { repRow(S1, i, 0) } { repRow(S2, i, 0) } i >= 0 && i < |S1| ==> repRow(S1, i, 0) == repRow(S2, i, 0)
+}
+
+// Second part: Sortedness
+
+
+function seqSorted(S: Seq[Int], ascending: Bool): Bool
+{
+    forall i:Int, j:Int :: { S[i], S[j] } 0 <= i && i < j && j < |S| ==> (ascending ? S[i] <= S[j] : S[j] <= S[i])
+}
 
 // Abstraction for better automation
 function absNumbersOfElemsCol(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: Int): Bool
@@ -246,6 +268,49 @@ function absNumbersOfElemsMulti(S: Seq[Seq[Int]], k: Int, n_zeros: Int, n_ones: 
 
 }
 
+
+// Returns the set of rows in which at the column col we have a b for bin(k, b)
+function numbersOfElemsCol(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, toRow: Int): Int
+    requires squareSeq(S)
+    requires toRow >= -1 && toRow < |S|
+    requires col >= 0 && col < |S|
+    ensures toRow >= 0 ==> result >= numbersOfElemsCol(S, col, k, b, toRow - 1)
+    ensures result <= toRow + 1
+    ensures result >= 0
+
+{
+    toRow == -1 ? 0 : (b2i(bin(S[toRow][col], k) == b) + numbersOfElemsCol(S, col, k, b, toRow - 1))
+}
+
+// Returns the set of rows in which at the column col we have a b for bin(k, b)
+function numbersOfElemsColInv(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, fromRow: Int): Int
+    requires squareSeq(S)
+    requires fromRow >= 0 && fromRow <= |S|
+    requires col >= 0 && col < |S|
+    ensures result + numbersOfElemsCol(S, col, k, b, fromRow - 1) == numbersOfElemsCol(S, col, k, b, |S| - 1) 
+    ensures result <= |S| - fromRow
+{
+    fromRow == |S| ? 0 : (b2i(bin(S[fromRow][col], k) == b) + numbersOfElemsColInv(S, col, k, b, fromRow + 1))
+}
+
+
+function bin(x: Int, k: Int): Int
+    ensures result == 0 <==> x <= k
+    ensures result == 1 <==> x > k
+
+function b2i(b: Bool): Int
+    ensures result == 0 <==> !b
+    ensures result == 1 <==> b
+    ensures result >= 0
+{
+    b ? 1 : 0
+}
+
+function dd(S: Seq[Seq[Int]]): Int
+    ensures result == |S| - 1
+{
+    |S| - 1
+}
 
 // SUMMARY
 
@@ -413,32 +478,6 @@ function sameCols(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]], from: Int): Bool
     from < |S1| ==> repCol(S1, 0, from) == repCol(S2, 0, from) && sameCols(S1, S2, from + 1)
 }
 
-function sameRows(S1: Seq[Seq[Int]], S2: Seq[Seq[Int]]): Bool
-    requires squareSeq(S1)
-    requires squareSeq(S2)
-    requires |S1| == |S2|
-{
-    forall i:Int :: { repRow(S1, i, 0) } { repRow(S2, i, 0) } i >= 0 && i < |S1| ==> repRow(S1, i, 0) == repRow(S2, i, 0)
-}
-
-
-
-
-
-
-// Second part: Sortedness
-
-
-function seqSorted(S: Seq[Int], ascending: Bool): Bool
-{
-    forall i:Int, j:Int :: { S[i], S[j] } 0 <= i && i < j && j < |S| ==> (ascending ? S[i] <= S[j] : S[j] <= S[i])
-}
-
-function bin(x: Int, k: Int): Int
-    ensures result == 0 <==> x <= k
-    ensures result == 1 <==> x > k
-
-
 method rowSortedExistsIndex(S: Seq[Seq[Int]], row: Int, k: Int, ascending: Bool) returns (index: Int)
     requires row >= 0 && row < |S|
     requires squareSeq(S)
@@ -522,46 +561,6 @@ function numberOfElemsMulti(r: Multiset[Int], k: Int, b: Int): Int
     //ensures forall ra:Multiset[Int], rb:Multiset[Int] :: { ra union rb } r == ra union rb ==> result == numberOfElemsMulti(ra, k, b) + numberOfElemsMulti(rb, k, b)
     ensures forall x:Int :: { x in r } (x in r) >= 1 ==> result == b2i(bin(x, k) == b) + numberOfElemsMulti(r setminus Multiset(x), k, b)
 
-function b2i(b: Bool): Int
-    ensures result == 0 <==> !b
-    ensures result == 1 <==> b
-    ensures result >= 0
-{
-    b ? 1 : 0
-}
-
-// Returns the set of rows in which at the column col we have a b for bin(k, b)
-function numbersOfElemsCol(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, toRow: Int): Int
-    requires squareSeq(S)
-    requires toRow >= -1 && toRow < |S|
-    requires col >= 0 && col < |S|
-    ensures toRow >= 0 ==> result >= numbersOfElemsCol(S, col, k, b, toRow - 1)
-    ensures result <= toRow + 1
-    ensures result >= 0
-
-{
-    toRow == -1 ? 0 : (b2i(bin(S[toRow][col], k) == b) + numbersOfElemsCol(S, col, k, b, toRow - 1))
-}
-
-// Returns the set of rows in which at the column col we have a b for bin(k, b)
-function numbersOfElemsColInv(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, fromRow: Int): Int
-    requires squareSeq(S)
-    requires fromRow >= 0 && fromRow <= |S|
-    requires col >= 0 && col < |S|
-    ensures result + numbersOfElemsCol(S, col, k, b, fromRow - 1) == numbersOfElemsCol(S, col, k, b, |S| - 1) 
-    ensures result <= |S| - fromRow
-{
-    fromRow == |S| ? 0 : (b2i(bin(S[fromRow][col], k) == b) + numbersOfElemsColInv(S, col, k, b, fromRow + 1))
-}
-
-function repSingle(S: Seq[Int], from: Int): Multiset[Int]
-    requires from >= 0 && from <= |S|
-{
-    from < |S| ? Multiset(S[from]) union repSingle(S, from + 1) : Multiset()
-}
-
-
-
 // toRow excluded
 function repColInv(S: Seq[Seq[Int]], toRow: Int, col: Int): Multiset[Int]
     requires squareSeq(S)
@@ -603,13 +602,6 @@ method lemma_two_functions_same(S: Seq[Seq[Int]], col: Int, k: Int, b: Int)
 }
 
 
-
-function dd(S: Seq[Seq[Int]]): Int
-    ensures result == |S| - 1
-{
-    |S| - 1
-}
-
 method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zeros: Int, n_min_ones: Int)
     
     requires squareSeq(S)
@@ -631,7 +623,6 @@ method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zero
 
 
 {
-
     n_min_zeros := 0
     n_min_ones := 0
 
@@ -751,6 +742,7 @@ method part1_aux(S: Seq[Seq[Int]], k: Int, n0: Int, n1: Int) returns (n_min_zero
     }
 }
 
+// MAYBE
 method sameAllAux(S: Seq[Seq[Int]], k: Int, b: Int, fromCol: Int)
     
     requires squareSeq(S)
@@ -762,7 +754,14 @@ method sameAllAux(S: Seq[Seq[Int]], k: Int, b: Int, fromCol: Int)
     
     if (fromCol < |S|) {
         sameAllAux(S, k, b, fromCol + 1)
+        
+        assert forall col:Int :: { repCol(S, 0, col) } { numbersOfElemsCol(S, col, k, b, dd(S)) }  col >= fromCol + 1 && col < |S| ==> numberOfElemsMulti(repCol(S, 0, col), k, b) == numbersOfElemsCol(S, col, k, b, dd(S))
+        
         lemma_two_functions_same(S, fromCol, k, b)
+
+
+        assert forall col:Int :: { repCol(S, 0, col) } { numbersOfElemsCol(S, col, k, b, dd(S)) }  col >= fromCol + 1 && col < |S| ==> numberOfElemsMulti(repCol(S, 0, col), k, b) == numbersOfElemsCol(S, col, k, b, dd(S))
+        assert forall col:Int :: { repCol(S, 0, col) } { numbersOfElemsCol(S, col, k, b, dd(S)) }  col >= fromCol && col < |S| ==> numberOfElemsMulti(repCol(S, 0, col), k, b) == numbersOfElemsCol(S, col, k, b, dd(S))
     }
 }
 
@@ -858,17 +857,6 @@ method witness_zero(S: Seq[Seq[Int]], k: Int, fromRow: Int, col: Int) returns (i
         index := witness_zero(S, k, fromRow + 1, col)
     }
 }
-/*
-
-function numbersOfElemsColInv(S: Seq[Seq[Int]], col: Int, k: Int, b: Int, fromRow: Int): Int
-    requires squareSeq(S)
-    requires fromRow >= 0 && fromRow <= |S|
-    requires col >= 0 && col < |S|
-    ensures result + numbersOfElemsCol(S, col, k, b, fromRow - 1) == numbersOfElemsCol(S, col, k, b, |S| - 1) 
-{
-    fromRow == |S| ? 0 : (b2i(bin(S[fromRow][col], k) == b) + numbersOfElemsColInv(S, col, k, b, fromRow + 1))
-}
-*/
 
 method part2_aux_zeros(S: Seq[Seq[Int]], k: Int, n: Int, fromRow: Int)
     requires squareSeq(S)

@@ -7,21 +7,22 @@ function divide_exponent(x: Int, n: Int): Int
 
 // two_exponent(p) >= 2 * n
 
+method simple_lemma_mult(a: Int, b: Int, c: Int)
+    requires a >= 0 && c >= 0
+    requires a <= b
+    ensures a * c <= b * c
+{
+
+}
+
 method bounds_for_divide_exponent(x: Int, n: Int)
     requires n >= 0 && x > 0
-    ensures divide_exponent(x, n) * two_exponent(n) <= x
+    ensures (divide_exponent(x, n) - 1) * two_exponent(n) <= (x - 1)
     ensures divide_exponent(x, n) * two_exponent(n + 1) > x
 {
-    if (n == 0) {
-
-        assert divide_exponent(x, n) == x
-        assert two_exponent(n) == 1
-        assert two_exponent(n + 1) == 2
-
-    }
-    else {
+    if (n > 0) {
         bounds_for_divide_exponent(x, n - 1)
-        assume false
+        simple_lemma_mult(2 * divide_exponent(x, n), (divide_exponent(x, n - 1) + 1), two_exponent(n - 1))
     }
 }
 
@@ -60,16 +61,55 @@ method finish_proof(S: Seq[Seq[Int]])
     ensures sorted(S)
 {
     assert forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 < |S| && i2 >= 0 && i2 < |S| && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
-        ==>
-        (i1 == i2 && j1 > j2 ==> (even(i1) ? S[i1][j1] >= S[i2][j2] : S[i1][j1] <= S[i2][j2] ))
-    assert forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } {helper_prover(S, i2, j2, i1, j1)} i1 >= 0 && i1 < |S| && i2 >= 0 && i2 < |S| && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
-        ==>
-        (i1 > i2 ==> helper_prover(S, i2, j2, i1, j1))
+        ==> (i1 == i2 && j1 > j2 ==> (even(i1) ? S[i1][j1] >= S[i2][j2] : S[i1][j1] <= S[i2][j2] ))
 
+    var ii1: Int := 0
+    while (ii1 < |S|)
+        invariant ii1 >= 0 && ii1 <= |S|
+        invariant forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 < ii1 && i2 >= 0 && i2 < |S| && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
+        ==> (i1 > i2 ==> S[i2][j2] <= S[i1][j1])
+        invariant forallk(S)
+    {
+        var ii2: Int := 0
+        while (ii2 < |S|)
+            invariant ii2 >= 0 && ii2 <= |S|
+            invariant forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 <= ii1 && i2 >= 0 && i2 < ii2 && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
+                ==> (i1 > i2 ==> S[i2][j2] <= S[i1][j1])
+            invariant forallk(S)
+        {
+            var jj1: Int := 0
+            while (jj1 < |S|)
+                invariant jj1 >= 0 && jj1 <= |S|
+                invariant forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 <= ii1 && i2 >= 0 && i2 <= ii2 && j1 >= 0 && j1 < jj1 && j2 >= 0 && j2 < |S|
+                    ==> (i1 > i2 ==> S[i2][j2] <= S[i1][j1])
+                invariant forallk(S)
+            {
+                var jj2: Int := 0
+                while (jj2 < |S|)
+                    invariant jj2 >= 0 && jj2 <= |S|
+                    invariant forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 <= ii1 && i2 >= 0 && i2 <= ii2 && j1 >= 0 && j1 <= jj1 && j2 >= 0 && j2 < jj2
+                        ==> (i1 > i2 ==> S[i2][j2] <= S[i1][j1])
+                    invariant forallk(S)
+                {
+                    if (ii1 > ii2) {
+                        helper_prover(S, ii2, jj2, ii1, jj1)
+                    }
+                    jj2 := jj2 + 1
+                }
+                jj1 := jj1 + 1
+            }
+            ii2 := ii2 + 1
+        }
+        ii1 := ii1 + 1
+    }
+
+
+    assert forall i1:Int, j1:Int, i2:Int, j2:Int :: { S[i1][j1], S[i2][j2] } i1 >= 0 && i1 < |S| && i2 >= 0 && i2 < |S| && j1 >= 0 && j1 < |S| && j2 >= 0 && j2 < |S|
+        ==> (i1 > i2 ==> S[i2][j2] <= S[i1][j1])
 
 }
 
-function helper_prover(S: Seq[Seq[Int]], srow: Int, scol: Int, brow: Int, bcol: Int): Bool
+method helper_prover(S: Seq[Seq[Int]], srow: Int, scol: Int, brow: Int, bcol: Int)
     requires squareSeq(S)
     requires srow >= 0 && srow < |S|
     requires scol >= 0 && scol < |S|
@@ -80,16 +120,24 @@ function helper_prover(S: Seq[Seq[Int]], srow: Int, scol: Int, brow: Int, bcol: 
     requires brow > srow
     requires forallk(S)
 
-    ensures result
+    ensures forallk(S)
+
+    ensures  S[srow][scol] <= S[brow][bcol]
 
 {
-    unfolding forallk(S) in (trigger( S[brow][bcol]) && !goodRow(S, S[brow][bcol], false, brow) && goodRow(S, S[brow][bcol], true, srow) && S[srow][scol] <= S[brow][bcol])
+    var k: Int := S[brow][bcol]
+    assert unfolding forallk(S) in true
+    assert trigger(k)
+    assert !goodRow(S, k, false, brow) 
+    assert goodRow(S, S[brow][bcol], true, srow)
 }
+
 
 function two_exponent(n: Int): Int
     ensures n >= 0 ==> result >= 1
     ensures n > 0 ==> result == 2 * two_exponent(n-1)
     ensures n < 0 ==> result == 0
+    ensures result >= 0
 {
     n > 0 ? 2 * two_exponent(n - 1) : (n == 0 ? 1 : 0)
 }
