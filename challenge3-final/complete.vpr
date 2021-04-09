@@ -462,6 +462,9 @@ function goodRowsOne(S: Seq[Seq[Int]], k: Int, n: Int): Bool
 
 // nxn matrix on heap
 
+field val: Int // heap location per slot per matrix
+
+
 domain NMatrix {
   function slot(a: NMatrix, i: Int, j:Int): Ref
   function dim(a: NMatrix): Int
@@ -488,6 +491,7 @@ function toSeqRow(m: NMatrix, row: Int) : Seq[Int]
     ensures |result| == dim(m) && (forall col: Int :: {result[col]} {M(row,col)} 
     (0 <= col && col < dim(m) ==> result[col] == M(row,col)))
 
+
 function toSeqCol(m: NMatrix, col: Int) : Seq[Int]
     requires access_column_frac(m, col, wildcard)
     requires col >= 0 && col < dim(m)
@@ -498,7 +502,10 @@ function toSeqCol(m: NMatrix, col: Int) : Seq[Int]
 
 function toSeq(m: NMatrix) : Seq[Seq[Int]]
     requires access_matrix_frac(m, wildcard)
+    
     ensures squareSeq(result)
+
+
     ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
     0 <= row && row < dim(m) ==> 
       |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
@@ -510,14 +517,16 @@ function toSeq(m: NMatrix) : Seq[Seq[Int]]
       projectCol(result, col) == toSeqCol(m, col))
 
 
-
+function projectCol(S: Seq[Seq[Int]], col: Int): Seq[Int]
+    requires squareSeq(S)
+    requires col >= 0 && col < |S|
+    ensures |result| == |S|
+    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i < |result| ==> result[i] == S[i][col]
 
 // easy to implement if needed
 
 
 // CODE
-
-field val: Int // heap location per slot per matrix
 
 method sort_row(m: NMatrix, row: Int, ascending: Bool)
   requires access_row(m, row)
@@ -631,12 +640,6 @@ function repByRows(S: Seq[Seq[Int]], fromRow: Int, fromCol: Int): Multiset[Int]
 {
     fromRow < |S| ? repRow(S, fromRow, fromCol) union repByRows(S, fromRow + 1, fromCol) : Multiset()
 }
-
-function projectCol(S: Seq[Seq[Int]], col: Int): Seq[Int]
-    requires squareSeq(S)
-    requires col >= 0 && col < |S|
-    ensures |result| == |S|
-    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i < |result| ==> result[i] == S[i][col]
 
 function repCol(S: Seq[Seq[Int]], fromRow: Int, col: Int): Multiset[Int]
     requires squareSeq(S)

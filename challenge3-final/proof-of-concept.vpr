@@ -1,0 +1,140 @@
+field val: Int // heap location per slot per matrix
+
+
+domain NMatrix {
+  function slot(a: NMatrix, i: Int, j:Int): Ref
+  function dim(a: NMatrix): Int
+  function parent(r: Ref): NMatrix
+  function Icoord(r: Ref): Int
+  function Jcoord(r: Ref): Int
+
+  axiom all_diff { // slot(m,i,j) is injective in all parameters
+    forall m: NMatrix, i: Int, j:Int :: { slot(m,i,j) }
+      parent(slot(m,i,j)) == m && Icoord(slot(m,i,j)) == i && Jcoord(slot(m,i,j)) == j 
+  }
+
+  axiom dim_nonneg {
+    forall a: NMatrix :: { dim(a) }
+      dim(a) >= 0
+  }
+
+}
+
+define M(i, j) slot(m,i,j).val // maybe use this in code?
+
+define access_matrix(m) forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < dim(m) && j < dim(m) ==> acc(slot(m,i,j).val)
+define access_matrix_frac(m, p) forall i:Int, j:Int :: {slot(m,i,j)} 0 <= i && 0 <= j && i < dim(m) && j < dim(m) ==> acc(slot(m,i,j).val, p)
+
+define access_row(m, row) forall jj:Int :: {slot(m, row,jj)} 0 <= jj && jj < dim(m) ==> acc(slot(m,row,jj).val)
+define access_row_frac(m, row, p) forall j:Int :: {slot(m, row,j)} 0 <= j && j < dim(m) ==> acc(slot(m,row,j).val, p)
+
+define access_column(m, col) forall i:Int :: {slot(m,i,col)} 0 <= i && i < dim(m) ==> acc(slot(m,i,col).val)
+define access_column_frac(m, col, p) forall i:Int :: {slot(m,i,col)} 0 <= i && i < dim(m) ==> acc(slot(m,i,col).val, p)
+
+
+define squareSeq(S) forall i:Int :: { S[i] } i >= 0 && i < |S| ==> |S[i]| == |S|
+
+function toSeqRow(m: NMatrix, row: Int) : Seq[Int]
+    requires access_row_frac(m, row, wildcard)
+    requires row >= 0 && row < dim(m)
+
+    ensures |result| == dim(m) && (forall col: Int :: {result[col]} {M(row,col)} 
+    (0 <= col && col < dim(m) ==> result[col] == M(row,col)))
+{
+    toSeqRowAux(m, row, dim(m) - 1)
+}
+
+function toSeqRowAux(m: NMatrix, row: Int, to: Int) : Seq[Int]
+    requires access_row_frac(m, row, wildcard)
+    requires row >= 0 && row < dim(m)
+    requires to >= 0 && to < dim(m)
+
+    ensures |result| == to + 1
+    ensures (forall col: Int :: {result[col]} {M(row,col)} (0 <= col && col <= to ==> result[col] == M(row,col)))
+{
+    to > 0 ? toSeqRowAux(m, row, to - 1) ++ Seq(M(row, to)) : Seq(M(row, to))
+}
+
+
+function toSeqCol(m: NMatrix, col: Int) : Seq[Int]
+    requires access_column_frac(m, col, wildcard)
+    requires col >= 0 && col < dim(m)
+
+    ensures |result| == dim(m) && (forall row: Int :: {result[row]} {M(row,col)} 
+    (0 <= row && row < dim(m) ==> result[row] == M(row,col)))
+{
+    toSeqColAux(m, col, dim(m) - 1)
+}
+
+
+function toSeqColAux(m: NMatrix, col: Int, to: Int) : Seq[Int]
+    requires access_column_frac(m, col, wildcard)
+    requires col >= 0 && col < dim(m)
+    requires to >= 0 && to < dim(m)
+
+    ensures |result| == to + 1
+    ensures (forall row: Int :: {result[row]} {M(row,col)} (0 <= row && row <= to ==> result[row] == M(row,col)))
+{
+    to > 0 ? toSeqColAux(m, col, to - 1) ++ Seq(M(to, col)) : Seq(M(to, col))
+}
+
+
+function toSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, wildcard)
+    
+    ensures squareSeq(result)
+
+
+    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row < dim(m) ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+
+    ensures |result| == dim(m) && (forall row:Int :: {result[row]} 0 <= row && row < dim(m) ==> 
+      result[row] == toSeqRow(m, row))
+
+    ensures |result| == dim(m) && (forall col:Int :: {projectCol(result, col)} 0 <= col && col < dim(m) ==> 
+      projectCol(result, col) == toSeqCol(m, col))
+{
+    dim(m) > 0 ? toSeqAux(m, dim(m) - 1) : Seq()
+}
+
+function toSeqAux(m: NMatrix, to: Int) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, wildcard)
+
+    requires to >= 0 && to < dim(m)
+
+    ensures |result| == to + 1
+    ensures (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row <= to ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+
+    ensures (forall row:Int :: {result[row]} 0 <= row && row <= to ==> |result[row]| == dim(m) &&
+      result[row] == toSeqRow(m, row))
+
+    ensures to == dim(m) - 1 ==> squareSeq(result)
+
+    //ensures (forall col:Int :: {projectCol(result, col)} 0 <= col && col < dim(m) ==> 
+     // projectColAux(result, col, to) == toSeqColAux(m, col, to))
+{
+    to > 0 ? toSeqAux(m, to - 1) ++ Seq(toSeqRow(m, to)) : Seq(toSeqRow(m, to))
+}
+
+
+function projectCol(S: Seq[Seq[Int]], col: Int): Seq[Int]
+    requires squareSeq(S)
+    requires col >= 0 && col < |S|
+    ensures |result| == |S|
+    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i < |result| ==> result[i] == S[i][col]
+{
+    projectColAux(S, col, |S| - 1)
+}
+
+function projectColAux(S: Seq[Seq[Int]], col: Int, to: Int): Seq[Int]
+    requires squareSeq(S)
+    requires col >= 0 && col < |S|
+    requires to >= 0 && to < |S|
+    ensures |result| == to + 1
+    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i <= to ==> result[i] == S[i][col]
+{
+    to > 0 ? projectColAux(S, col, to - 1) ++ Seq(S[to][col]) : Seq(S[to][col])
+}
