@@ -457,11 +457,6 @@ function goodRowsOne(S: Seq[Seq[Int]], k: Int, n: Int): Bool
 }
 
 
-// Tasks completed: 1 and 2
-
-// Carbon ~ 12 s
-// Silicon fails to verify it
-
 // nxn matrix on heap
 
 field val: Int // heap location per slot per matrix
@@ -597,49 +592,6 @@ function projectColAux(S: Seq[Seq[Int]], col: Int, to: Int): Seq[Int]
 {
     to > 0 ? projectColAux(S, col, to - 1) ++ Seq(S[to][col]) : Seq(S[to][col])
 }
-
-
-/*
-function toSeqRow(m: NMatrix, row: Int) : Seq[Int]
-    requires access_row_frac(m, row, wildcard)
-    requires row >= 0 && row < dim(m)
-
-    ensures |result| == dim(m) && (forall col: Int :: {result[col]} {M(row,col)} 
-    (0 <= col && col < dim(m) ==> result[col] == M(row,col)))
-
-
-function toSeqCol(m: NMatrix, col: Int) : Seq[Int]
-    requires access_column_frac(m, col, wildcard)
-    requires col >= 0 && col < dim(m)
-
-    ensures |result| == dim(m) && (forall row: Int :: {result[row]} {M(row,col)} 
-    (0 <= row && row < dim(m) ==> result[row] == M(row,col)))
-
-
-function toSeq(m: NMatrix) : Seq[Seq[Int]]
-    requires access_matrix_frac(m, wildcard)
-    
-    ensures squareSeq(result)
-
-
-    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
-    0 <= row && row < dim(m) ==> 
-      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
-
-    ensures |result| == dim(m) && (forall row:Int :: {result[row]} 0 <= row && row < dim(m) ==> 
-      result[row] == toSeqRow(m, row))
-
-    ensures |result| == dim(m) && (forall col:Int :: {projectCol(result, col)} 0 <= col && col < dim(m) ==> 
-      projectCol(result, col) == toSeqCol(m, col))
-
-
-function projectCol(S: Seq[Seq[Int]], col: Int): Seq[Int]
-    requires squareSeq(S)
-    requires col >= 0 && col < |S|
-    ensures |result| == |S|
-    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i < |result| ==> result[i] == S[i][col]
-*/
-
 
 // CODE
 
