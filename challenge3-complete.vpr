@@ -269,6 +269,47 @@ method shearsort_loop(n: Int, m: NMatrix, k: Int) returns (n0: Int, n1: Int)
 
 }
 
+method sort_row(m: NMatrix, row: Int, ascending: Bool)
+  requires access_row(m, row)
+  requires row >= 0 && row < dim(m)
+
+  ensures access_row(m, row)
+  ensures repSingle(toSeqRow(m, row), 0) == old(repSingle(toSeqRow(m, row), 0))
+  ensures seqSorted(toSeqRow(m, row), ascending)
+  
+
+method sort_column(m: NMatrix, column: Int)
+  requires access_column(m, column)
+  requires column >= 0 && column < dim(m)
+  ensures access_column(m, column)
+  ensures repSingle(toSeqCol(m, column), 0) == old(repSingle(toSeqCol(m, column), 0))
+  ensures seqSorted(toSeqCol(m, column), true)
+
+// Parallel loops
+
+define P1(m, tid) access_row(m, tid) && tid >= 0 && tid < dim(m)
+define Q1(m, tid, lab) access_row(m, tid) && repSingle(toSeqRow(m, tid), 0) == old[lab](repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+
+method first_inner_loop(m: NMatrix, tid: Int)
+  requires P1(m, tid)
+  ensures access_row(m, tid) && repSingle(toSeqRow(m, tid), 0) == old(repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
+{
+  sort_row(m, tid, even(tid))
+}
+
+define P2(m, tid) access_column(m, tid) && tid >= 0 && tid < dim(m)
+define Q2(m, tid, lab) access_column(m, tid) && repSingle(toSeqCol(m, tid), 0) == old[lab](repSingle(toSeqCol(m, tid), 0)) && seqSorted(toSeqCol(m, tid), true)
+
+
+method second_inner_loop(m: NMatrix, tid: Int)
+  requires P2(m, tid)
+  ensures access_column(m, tid) && repSingle(toSeqCol(m, tid), 0) == old(repSingle(toSeqCol(m, tid), 0)) && seqSorted(toSeqCol(m, tid), true)
+{
+  sort_column(m, tid)
+}
+
+
+
 
 function divide_exponent(x: Int, n: Int): Int
     requires n >= 0 && x >= 0
@@ -591,63 +632,6 @@ function projectColAux(S: Seq[Seq[Int]], col: Int, to: Int): Seq[Int]
     ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i <= to ==> result[i] == S[i][col]
 {
     to > 0 ? projectColAux(S, col, to - 1) ++ Seq(S[to][col]) : Seq(S[to][col])
-}
-
-// CODE
-
-method sort_row(m: NMatrix, row: Int, ascending: Bool)
-  requires access_row(m, row)
-  requires row >= 0 && row < dim(m)
-
-  ensures access_row(m, row)
-  //ensures repRow(S, row, 0) == old(repRow(S, row, 0))
-  ensures repSingle(toSeqRow(m, row), 0) == old(repSingle(toSeqRow(m, row), 0))
-  ensures seqSorted(toSeqRow(m, row), ascending)
-  
-  //TOSEQ: ensures rowSorted(S, row, even(row))
-
-
-
-
-method sort_column(m: NMatrix, column: Int)
-  requires access_column(m, column)
-  requires column >= 0 && column < dim(m)
-  ensures access_column(m, column)
-  //ensures repCol(S, 0, column) == old(repCol(S, 0, column))
-  ensures repSingle(toSeqCol(m, column), 0) == old(repSingle(toSeqCol(m, column), 0))
-  ensures seqSorted(toSeqCol(m, column), true)
-
-method allocMatrix(d:Int) returns (m: NMatrix)
-  requires d >= 0
-  ensures dim(m) == d
-  ensures access_matrix(m)
-
-
-// Parallel loops
-
-define P1(m, tid) access_row(m, tid) && tid >= 0 && tid < dim(m)
-define Q1(m, tid, lab) access_row(m, tid) && repSingle(toSeqRow(m, tid), 0) == old[lab](repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
-
-//TOSEQ:  && rowSorted(S, tid, even(tid))
-
-method first_inner_loop(m: NMatrix, tid: Int)
-  requires P1(m, tid)
-  //ensures access_row(m, tid) && repRow(S, tid, 0) == old(repRow(S, tid, 0)) && repSingle(toSeqRow(m, tid), 0) == old(repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
-  ensures access_row(m, tid) && repSingle(toSeqRow(m, tid), 0) == old(repSingle(toSeqRow(m, tid), 0)) && seqSorted(toSeqRow(m, tid), even(tid))
-  //TOSEQ:  && rowSorted(S, tid, even(tid))
-{
-  sort_row(m, tid, even(tid))
-}
-
-define P2(m, tid) access_column(m, tid) && tid >= 0 && tid < dim(m)
-define Q2(m, tid, lab) access_column(m, tid) && repSingle(toSeqCol(m, tid), 0) == old[lab](repSingle(toSeqCol(m, tid), 0)) && seqSorted(toSeqCol(m, tid), true)
-
-
-method second_inner_loop(m: NMatrix, tid: Int)
-  requires P2(m, tid)
-  ensures access_column(m, tid) && repSingle(toSeqCol(m, tid), 0) == old(repSingle(toSeqCol(m, tid), 0)) && seqSorted(toSeqCol(m, tid), true)
-{
-  sort_column(m, tid)
 }
 
 // Specifications
