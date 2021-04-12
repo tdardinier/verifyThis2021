@@ -17,6 +17,8 @@ method shearsort(n: Int, m: NMatrix)
     // Main loop is there
     n0, n1 := shearsort_loop(n, m, k)
 
+    // Last (half-)iteration:
+
     var S: Seq[Seq[Int]] := toSeq(m)
 
     assert S0 == old(toSeq(m))
@@ -490,6 +492,120 @@ function toSeqRow(m: NMatrix, row: Int) : Seq[Int]
 
     ensures |result| == dim(m) && (forall col: Int :: {result[col]} {M(row,col)} 
     (0 <= col && col < dim(m) ==> result[col] == M(row,col)))
+/*
+{
+    toSeqRowAux(m, row, dim(m) - 1)
+}
+*/
+
+function toSeqRowAux(m: NMatrix, row: Int, to: Int) : Seq[Int]
+    requires access_row_frac(m, row, wildcard)
+    requires row >= 0 && row < dim(m)
+    requires to >= 0 && to < dim(m)
+    ensures |result| == to + 1
+    ensures (forall col: Int :: {result[col]} {M(row,col)} (0 <= col && col <= to ==> result[col] == M(row,col)))
+{
+    to > 0 ? toSeqRowAux(m, row, to - 1) ++ Seq(M(row, to)) : Seq(M(row, to))
+}
+
+
+function toSeqCol(m: NMatrix, col: Int) : Seq[Int]
+    requires access_column_frac(m, col, wildcard)
+    requires col >= 0 && col < dim(m)
+
+    ensures |result| == dim(m) && (forall row: Int :: {result[row]} {M(row,col)} 
+    (0 <= row && row < dim(m) ==> result[row] == M(row,col)))
+/*
+{
+    toSeqColAux(m, col, dim(m) - 1)
+}
+*/
+
+
+function toSeqColAux(m: NMatrix, col: Int, to: Int) : Seq[Int]
+    requires access_column_frac(m, col, wildcard)
+    requires col >= 0 && col < dim(m)
+    requires to >= 0 && to < dim(m)
+
+    ensures |result| == to + 1
+    ensures (forall row: Int :: {result[row]} {M(row,col)} (0 <= row && row <= to ==> result[row] == M(row,col)))
+{
+    to > 0 ? toSeqColAux(m, col, to - 1) ++ Seq(M(to, col)) : Seq(M(to, col))
+}
+
+
+function toSeq(m: NMatrix) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, wildcard)
+    
+    ensures squareSeq(result)
+
+
+    ensures |result| == dim(m) && (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row < dim(m) ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+
+    ensures |result| == dim(m) && (forall row:Int :: {result[row]} 0 <= row && row < dim(m) ==> 
+      result[row] == toSeqRow(m, row))
+
+    ensures |result| == dim(m) && (forall col:Int :: {projectCol(result, col)} 0 <= col && col < dim(m) ==> 
+      projectCol(result, col) == toSeqCol(m, col))
+/*
+{
+    dim(m) > 0 ? toSeqAux(m, dim(m) - 1) : Seq()
+}
+*/
+
+function toSeqAux(m: NMatrix, to: Int) : Seq[Seq[Int]]
+    requires access_matrix_frac(m, wildcard)
+
+    requires to >= 0 && to < dim(m)
+
+    ensures |result| == to + 1
+    ensures (forall row:Int , col: Int :: {result[row][col]}{M(row,col)} 
+    0 <= row && row <= to ==> 
+      |result[row]| == dim(m) && (0 <= col && col < dim(m) ==> result[row][col] == M(row,col)))
+
+    ensures (forall row:Int :: {result[row]} 0 <= row && row <= to ==> |result[row]| == dim(m) &&
+      result[row] == toSeqRow(m, row))
+
+    ensures to == dim(m) - 1 ==> squareSeq(result)
+
+    //ensures (forall col:Int :: {projectCol(result, col)} 0 <= col && col < dim(m) ==> 
+     // projectColAux(result, col, to) == toSeqColAux(m, col, to))
+{
+    to > 0 ? toSeqAux(m, to - 1) ++ Seq(toSeqRow(m, to)) : Seq(toSeqRow(m, to))
+}
+
+
+function projectCol(S: Seq[Seq[Int]], col: Int): Seq[Int]
+    requires squareSeq(S)
+    requires col >= 0 && col < |S|
+    ensures |result| == |S|
+    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i < |result| ==> result[i] == S[i][col]
+/*
+{
+    projectColAux(S, col, |S| - 1)
+}
+*/
+
+function projectColAux(S: Seq[Seq[Int]], col: Int, to: Int): Seq[Int]
+    requires squareSeq(S)
+    requires col >= 0 && col < |S|
+    requires to >= 0 && to < |S|
+    ensures |result| == to + 1
+    ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i <= to ==> result[i] == S[i][col]
+{
+    to > 0 ? projectColAux(S, col, to - 1) ++ Seq(S[to][col]) : Seq(S[to][col])
+}
+
+
+/*
+function toSeqRow(m: NMatrix, row: Int) : Seq[Int]
+    requires access_row_frac(m, row, wildcard)
+    requires row >= 0 && row < dim(m)
+
+    ensures |result| == dim(m) && (forall col: Int :: {result[col]} {M(row,col)} 
+    (0 <= col && col < dim(m) ==> result[col] == M(row,col)))
 
 
 function toSeqCol(m: NMatrix, col: Int) : Seq[Int]
@@ -522,8 +638,7 @@ function projectCol(S: Seq[Seq[Int]], col: Int): Seq[Int]
     requires col >= 0 && col < |S|
     ensures |result| == |S|
     ensures forall i:Int :: { S[i] } {result[i]} i >= 0 && i < |result| ==> result[i] == S[i][col]
-
-// easy to implement if needed
+*/
 
 
 // CODE
